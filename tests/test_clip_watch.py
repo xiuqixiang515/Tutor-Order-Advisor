@@ -401,6 +401,22 @@ class TestCleanOrders(unittest.TestCase):
         got = cw._clean_orders([{"rate": "200", "freq": "2"}], 1)
         self.assertEqual(got, [{"rate": 200.0, "freq": 2.0}])
 
+    def test_rate_range_string_is_split(self):
+        # 模型把 "110-130/h" 原样带回时：下限入账，上限进 rateMax
+        got = cw._clean_orders([{"rate": "110-130", "freq": 1}], 1)
+        self.assertEqual(got, [{"rate": 110.0, "rateMax": 130.0, "freq": 1.0}])
+
+    def test_rate_range_out_of_bounds_is_dropped(self):
+        # 下限越界（>5000）整体作废
+        got = cw._clean_orders([{"rate": "9999-13000"}], 1)
+        self.assertEqual(got, [None])
+
+    def test_rate_max_must_exceed_rate(self):
+        got = cw._clean_orders([{"rate": 130, "rateMax": 110}], 1)
+        self.assertEqual(got, [{"rate": 130.0}])
+        got = cw._clean_orders([{"rate": 110, "rateMax": 130}], 1)
+        self.assertEqual(got, [{"rate": 110.0, "rateMax": 130.0}])
+
     def test_days_are_deduped_and_sorted(self):
         got = cw._clean_orders([{"days": [0, 6, 6, 9, -1]}], 1)
         self.assertEqual(got, [{"days": [0, 6]}])

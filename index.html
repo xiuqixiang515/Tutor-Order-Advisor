@@ -743,6 +743,16 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       if(hrsPer > 0 && hiPrice > 0) o.rate = Math.round(hiPrice / hrsPer);
     }
 
+    // 「110-130/h」这种区间报价。群里的单子常给一个范围，
+    // 只取贴着单位的那个数会把区间信息丢掉，界面上也没法解释
+    // 「为什么显示 110 却算出别的数」。按下限入账、上限留着展示。
+    // 注意放在「总价/时长」后面：那边 / 后面跟的是数字（260-300/2H），
+    // 这边跟的是单位字母，两边互斥，顺序反了会把总价拆坏。
+    if(!o.rate && (m = t.match(/(\d{2,4})\s*[-~—]\s*(\d{2,4})\s*(?:元|块)?\s*(?:\/|每)\s*(?:小时|h|H|时|课时|节)/i))){
+      o.rate = parseInt(m[1], 10);
+      o.rateMax = parseInt(m[2], 10);
+    }
+
     if(!o.rate && (m = t.match(/(\d+)\s*(?:元|块|rmb)?\s*(?:\/|每)\s*(?:小时|h|时|课时|节)/i))) o.rate = parseInt(m[1],10);
     else if(!o.rate && (m = t.match(/(?:时薪|每小时|一小时|课时费)\s*(?:为|是|：|:)?\s*(\d+)/))) o.rate = parseInt(m[1],10);
     else if(!o.rate && (m = t.match(/(\d+)\s*(?:元|块)\s*(?:一小时|每小时)/))) o.rate = parseInt(m[1],10);
@@ -917,16 +927,22 @@ textarea::placeholder{color:var(--faint);opacity:.75}
 
     var fee = 0, feeNote = '';
     var r = c.netRate;
+    // 报价要说全：区间给上限、净时薪和毛时薪的差也要交代。
+    // 不写清楚的话，单子写 110-130 这里却显示 54，用户只会觉得算错了——
+    // 其实是单程 64 分钟的通勤把它拖下来的，但界面不说没人知道。
+    var quote = o.rate ? rateText(o) + ' 元/时' : '';
+    if(o.rate && o.rateMax && o.rateMax > o.rate) quote += '（区间按下限 ' + o.rate + ' 算）';
     if(!o.rate){
       fee = 40; feeNote = '没写课时费，得先谈';
     } else if(r >= cfg.idealRate){
-      fee = 100; feeNote = '净时薪 ' + Math.round(r) + ' 元，超过你的理想值';
+      fee = 100; feeNote = '报价 ' + quote + '，净时薪 ' + Math.round(r) + ' 元，超过你的理想值';
     } else if(r >= cfg.minRate){
       fee = 60 + 40 * (r - cfg.minRate) / Math.max(1, cfg.idealRate - cfg.minRate);
-      feeNote = '净时薪 ' + Math.round(r) + ' 元，在底线和理想之间';
+      feeNote = '报价 ' + quote + '，扣掉通勤后净时薪 ' + Math.round(r) + ' 元，在底线和理想之间';
     } else {
       fee = Math.max(0, 55 * r / Math.max(1, cfg.minRate));
-      feeNote = '净时薪只有 ' + Math.round(r) + ' 元，低于底线 ' + cfg.minRate + ' 元';
+      feeNote = '报价 ' + quote + '，扣掉通勤后净时薪只剩 ' + Math.round(r)
+        + ' 元，低于底线 ' + cfg.minRate + ' 元——不是报价低，是路上时间把它拖下来的';
     }
     dims.push({k:'课时费', v:fee, note:feeNote});
 
@@ -1074,6 +1090,12 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     return '<div class="st"><div class="k">' + k + '</div><div class="v">' + v + '<small>' + u + '</small></div></div>';
   }
 
+  // 报价的展示。给区间就写成「110–130」，只给一个数就照常。
+  function rateText(o){
+    if(!o.rate) return '';
+    return o.rateMax && o.rateMax > o.rate ? o.rate + '–' + o.rateMax : String(o.rate);
+  }
+
   // 通勤这块想在详情里一眼看出「这趟值不值」：
   // 上面是单程分钟和出行方式，中间一条比例条把上课和路上摊开，
   // 底下说明这个数字是查的还是估的，免得把估算当成实测。
@@ -1165,7 +1187,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
 
     h += '<div style="text-align:right;font-size:12.5px;color:var(--faint);line-height:1.7">';
     h += esc(o.grade ? normGrade(o.grade) : '年级未写') + ' · ' + esc(o.subjects.join('、') || '科目未写') + '<br>';
-    h += esc(o.rate ? o.rate + ' 元/时' : '价格未写') + ' · ' + (o.isOnline ? '线上' : esc(o.location || '地点未写'));
+    h += esc(o.rate ? rateText(o) + ' 元/时' : '价格未写') + ' · ' + (o.isOnline ? '线上' : esc(o.location || '地点未写'));
     h += '</div></div>';
 
     h += '<div class="match-track"><i style="width:' + mt.total + '%;background:' + colorOf(mt.total) + '"></i></div>';
@@ -1746,7 +1768,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     '- subjects: 科目数组，如 ["数学"]。只认这些科目：' + SUBJECTS.join('、'),
     '- freq: 每周上课次数，数字',
     '- duration: 每次课的小时数，数字',
-    '- rate: 每小时课时费，数字。只给了单次总价就用总价除以时长换算',
+    '- rate: 每小时课时费，数字。给的是区间（如 110-130/h）就取下限，并把上限放进 rateMax；只给了单次总价就用总价除以时长换算',
     '- isOnline: 是否线上课，布尔值',
     '- location: 地点字符串，如 "海淀"、"地铁4号线人民大学站"、"线上"。保留原文写法，不要改写',
     '- days: 星期数组，0 是周日，1 到 6 是周一到周六。"周末" 是 [6,0]',
@@ -2444,6 +2466,20 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       if(lim && (v < lim[0] || v > lim[1])) return;
       o[key] = v; got.push(key);
     }
+    // 报价区间。模型可能给数字 110，也可能原样给 "110-130"，
+    // 两种都接住；上限单独存，展示时用，入账仍按下限。
+    function rateRange(){
+      var lo = null, hi = null, fLo = parseFloat(f.rate), fHi = parseFloat(f.rateMax);
+      if(isFinite(fLo) && fLo > 0) lo = fLo;
+      var sm = typeof f.rate === 'string' ? f.rate.match(/(\d{2,4})\s*[-~—]\s*(\d{2,4})/) : null;
+      if(sm){ lo = parseInt(sm[1], 10); hi = parseInt(sm[2], 10); }
+      if(isFinite(fHi) && fHi > lo) hi = fHi;
+      if(lo == null) return;
+      var lim = AI_NUM_LIMITS.rate;
+      if(lo < lim[0] || lo > lim[1]) return;
+      o.rate = lo; got.push('rate');
+      if(hi != null && hi >= lo && hi <= lim[1]){ o.rateMax = hi; got.push('rateMax'); }
+    }
     function text(key, allow){
       var v = typeof f[key] === 'string' ? f[key].trim() : '';
       if(!v) return;
@@ -2473,7 +2509,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
 
     text('grade');
     subs('subjects');
-    num('rate'); num('freq'); num('duration');
+    rateRange(); num('freq'); num('duration');
     days('days');
     text('teacherGender', ['男','女']);
     text('timeOfDay', ['上午','中午','下午','晚上','傍晚','放学后']);

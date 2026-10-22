@@ -235,7 +235,7 @@ FIELDS_DESC = """字段说明（每条单子都要给全这些键，没提到的
 - subjects: 科目数组，如 ["数学"]。只认这些科目：%s
 - freq: 每周上课次数，数字
 - duration: 每次课的小时数，数字
-- rate: 每小时课时费，数字。只给了单次总价就用总价除以时长换算
+- rate: 每小时课时费，数字。给的是区间（如 110-130/h）就取下限，并把上限放进 rateMax；只给了单次总价就用总价除以时长换算
 - isOnline: 是否线上课，布尔值
 - location: 地点字符串，如 "海淀"、"地铁4号线人民大学站"、"线上"。保留原文写法，不要改写
 - days: 星期数组，0 是周日，1 到 6 是周一到周六。"周末" 是 [6,0]
@@ -313,7 +313,32 @@ def _clean_orders(raw_orders, count):
             subs = [str(s).strip() for s in subs if str(s).strip() in SUBJECTS]
             if subs:
                 clean["subjects"] = subs
-        for key in ("rate", "freq", "duration"):
+        # 报价区间。模型给 "110-130" 这种字符串时取下限当 rate，上限进 rateMax；
+        # 给纯数字就照常处理。入账永远按下限——宁可少算不能多算。
+        raw_rate = item.get("rate")
+        sm = re.search(r"(\d{2,4})\s*[-~—]\s*(\d{2,4})", str(raw_rate)) if isinstance(raw_rate, str) else None
+        if sm:
+            lo, hi = int(sm.group(1)), int(sm.group(2))
+            low, high = _AI_NUM_LIMITS["rate"]
+            if low <= lo <= high:
+                clean["rate"] = float(lo)
+                if lo < hi <= high:
+                    clean["rateMax"] = float(hi)
+        else:
+            try:
+                val = float(raw_rate)
+                low, high = _AI_NUM_LIMITS["rate"]
+                if val > 0 and low <= val <= high:
+                    clean["rate"] = val
+            except (TypeError, ValueError):
+                pass
+        try:
+            hi = float(item.get("rateMax"))
+            if clean.get("rate") and clean["rate"] < hi <= _AI_NUM_LIMITS["rate"][1]:
+                clean["rateMax"] = hi
+        except (TypeError, ValueError):
+            pass
+        for key in ("freq", "duration"):
             try:
                 val = float(item.get(key))
             except (TypeError, ValueError):
