@@ -450,12 +450,12 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       <div class="group-t">多少钱值得</div>
       <div class="row">
         <div class="fld">
-          <label>净时薪底线（元/时）</label>
+          <label>时薪底线（元/时）</label>
           <input type="number" id="fMinRate" min="0" step="10">
           <div class="h">扣掉路上时间和车费之后</div>
         </div>
         <div class="fld">
-          <label>理想净时薪（元/时）</label>
+          <label>理想时薪（元/时）</label>
           <input type="number" id="fIdealRate" min="0" step="10">
         </div>
       </div>
@@ -925,24 +925,23 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     }
     dims.push({k:'年级', v:grd, note:grdNote, hard:true});
 
+    // 课时费维度只看报价本身——用户要的是「这条单子标价多少」，不要被
+    // 通勤拖低的净时薪。110-130/h、单程 60 分钟，毛时薪 110 就是 110，
+    // 通勤多累在「距离」维度单独体现，不该绕回来又压一次钱。
     var fee = 0, feeNote = '';
-    var r = c.netRate;
-    // 报价要说全：区间给上限、净时薪和毛时薪的差也要交代。
-    // 不写清楚的话，单子写 110-130 这里却显示 54，用户只会觉得算错了——
-    // 其实是单程 64 分钟的通勤把它拖下来的，但界面不说没人知道。
+    var r = o.rate || 0;
     var quote = o.rate ? rateText(o) + ' 元/时' : '';
     if(o.rate && o.rateMax && o.rateMax > o.rate) quote += '（区间按下限 ' + o.rate + ' 算）';
     if(!o.rate){
       fee = 40; feeNote = '没写课时费，得先谈';
     } else if(r >= cfg.idealRate){
-      fee = 100; feeNote = '报价 ' + quote + '，净时薪 ' + Math.round(r) + ' 元，超过你的理想值';
+      fee = 100; feeNote = '报价 ' + quote + '，超过你的理想值 ' + cfg.idealRate;
     } else if(r >= cfg.minRate){
       fee = 60 + 40 * (r - cfg.minRate) / Math.max(1, cfg.idealRate - cfg.minRate);
-      feeNote = '报价 ' + quote + '，扣掉通勤后净时薪 ' + Math.round(r) + ' 元，在底线和理想之间';
+      feeNote = '报价 ' + quote + '，在底线 ' + cfg.minRate + ' 和理想 ' + cfg.idealRate + ' 之间';
     } else {
       fee = Math.max(0, 55 * r / Math.max(1, cfg.minRate));
-      feeNote = '报价 ' + quote + '，扣掉通勤后净时薪只剩 ' + Math.round(r)
-        + ' 元，低于底线 ' + cfg.minRate + ' 元——不是报价低，是路上时间把它拖下来的';
+      feeNote = '报价 ' + quote + '，低于底线 ' + cfg.minRate + ' 元';
     }
     dims.push({k:'课时费', v:fee, note:feeNote});
 
@@ -1003,7 +1002,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       reqList.push(0); reqNotes.push('要求名校或高学历（含「92」这类说法），你不满足');
     }
     // 「专职」「在职老师」是另一档：这单 250 元/时是专职价，
-    // 在校生去接通常拿不到，也不该按这个价算净时薪。
+    // 在校生去接通常拿不到，也不该按这个价算账。
     // 用户是不是学生看自我介绍（me.card，默认「XX大学 · 数学系 · 大三」）
     var isStudent = /(大学|学院|大[一二三四]|研[一二三]|博士|本科|在读)/.test(cfg.card || '');
     if(/(专职|在职老师|学校在职|机构老师)/.test(o.raw) && isStudent){
@@ -1196,7 +1195,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
 
     if(mapInfo){
       var mcls = mapInfo.state === 'loading' ? ' loading' : (mapInfo.state === 'fail' ? ' bad' : '');
-      var mtxt = mapInfo.state === 'loading' ? '正在查真实通勤路线，距离和净时薪稍后更新' : mapInfo.text;
+      var mtxt = mapInfo.state === 'loading' ? '正在查真实通勤路线，距离稍后更新' : mapInfo.text;
       h += '<div class="ai-note block-in d1' + mcls + '"><span class="ai-dot"></span><span>' + (ink(mtxt, 46) || esc(mtxt)) + '</span></div>';
     }
 
@@ -1227,11 +1226,13 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     h += commuteBlock(o, c);
 
     h += '<div class="sec-t">这单的钱和时间</div><div class="stats block-in d2">';
-    h += stat('每周收入', Math.round(c.netWeek), ' 元');
-    h += stat('净时薪', Math.round(c.netRate), ' 元');
+    // 用户要的是报价本身，不要算进通勤的"净时薪"。
+    // 每周收入用毛收入（不扣车费），月收入同口径；通勤小时单列，让你自己掂量
+    h += stat('时薪', o.rate || 0, ' 元');
+    h += stat('每周收入', Math.round(c.grossWeek), ' 元');
     h += stat('每周上课', c.teachWeekH, ' 小时');
     h += stat('每周路上', c.commuteWeekH.toFixed(1), ' 小时');
-    h += stat('月净收入', Math.round(c.month), ' 元');
+    h += stat('月收入', Math.round(c.grossWeek * 4.3), ' 元');
     h += '</div>';
 
     var talks = genTalks(o, c, m);
@@ -1284,8 +1285,8 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     cache.forEach(function(item, i){
       var o = item.o, mt = item.mt, tags = [];
       if(mt.blocked.length) tags.push('<span class="tag bad">硬性不符</span>');
-      if(item.c.netRate > 0) tags.push('<span class="tag">净时薪 ' + Math.round(item.c.netRate) + '</span>');
-      // 通勤没查过的话，净时薪也是按上限估的，标出来免得当成实测值
+      if(o.rate) tags.push('<span class="tag">时薪 ' + o.rate + (o.rateMax && o.rateMax > o.rate ? '–' + o.rateMax : '') + '</span>');
+      // 通勤没查过的话，距离是按上限估的，标出来免得当成实测值
       if(!o.isOnline && !item.c.commuteKnown) tags.push('<span class="tag">距离待查</span>');
       if(o.isOnline) tags.push('<span class="tag good">线上</span>');
       if(o.days.length) tags.push('<span class="tag">' + o.days.map(function(d){ return DAY_NAME[d]; }).join('') + '</span>');
@@ -2158,7 +2159,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       o._commuteDest = d.destName || '';
       // 具体线路放在下面的「通勤」区块里，这里只说一句查到了，不然重复两遍
       o._mapNote = {state:'ok', text:'高德查到真实路线（' + d.mode + ' ' + d.minutes
-        + ' 分钟），净时薪和距离已按它重算'};
+        + ' 分钟），距离已按它重算'};
       var c = computeCost(o, me);
       var mt = computeMatch(o, c, me);
       item.c = c;
