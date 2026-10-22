@@ -315,6 +315,22 @@ def amap_enabled():
     return bool(load_config().get("amap_key"))
 
 
+# 高德失败时 HTTP 仍是 200，只能靠 infocode 分原因。
+# 「Key 不对」「请求太频繁」「当天额度用完」是三件事，混成一句的话
+# 用户会照着错的方向去查——比如被限流了却去重新申请 Key。
+AMAP_HINTS = {
+    "10001": "高德 Key 无效或过期（10001），确认申请的是「Web 服务」类型",
+    "10002": "高德 Key 没有这个服务的权限（10002）",
+    "10003": "高德 Key 没开通这个服务（10003）",
+    "10004": "高德请求太频繁（10004），缓一下再试",
+    "10005": "高德 Key 的 IP 白名单对不上（10005），白名单要留空",
+    "10006": "高德 Key 绑定的域名不对（10006）",
+    "10007": "高德数字签名验证失败（10007）",
+    "10009": "高德 Key 和平台不匹配（10009），要 Web 服务类型的",
+    "10044": "高德今天的免费额度用完了（10044），明天再来",
+}
+
+
 def _amap(path, params):
     """调高德 Web 服务接口。高德失败时 HTTP 仍是 200，靠 status 字段判断。"""
     cfg = load_config()
@@ -326,7 +342,8 @@ def _amap(path, params):
     with urllib.request.urlopen(req, timeout=8, context=_ssl_context()) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     if str(data.get("status")) != "1":
-        raise RuntimeError(data.get("info") or "高德接口返回失败")
+        code = str(data.get("infocode") or "")
+        raise RuntimeError(AMAP_HINTS.get(code) or (data.get("info") or "高德接口返回失败"))
     return data
 
 

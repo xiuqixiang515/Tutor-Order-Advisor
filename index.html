@@ -283,7 +283,8 @@ textarea::placeholder{color:var(--faint);opacity:.75}
 .bulk-t{font-size:12px;color:var(--muted);flex-shrink:0}
 .bulk-track{flex:1;height:5px;border-radius:3px;background:var(--s3);overflow:hidden}
 .bulk-track i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s ease}
-.linklike{color:var(--accent);cursor:pointer}
+/* 负 margin 抵掉 padding，视觉位置不变但点击区变大，手机上更好点 */
+.linklike{color:var(--accent);cursor:pointer;display:inline-block;padding:6px 10px;margin:-6px -10px}
 .linklike:hover{text-decoration:underline}
 
 .cm{background:var(--s1);border-radius:11px;padding:13px 14px}
@@ -1198,6 +1199,9 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     if(back) back.addEventListener('click', renderList);
   }
 
+  // 列表滚动位置。进详情前记下，返回时恢复。
+  var listScrollY = 0;
+
   function renderList(){
     var out = document.getElementById('out');
     if(!cache.length) return;
@@ -1226,7 +1230,9 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       if(o.isOnline) tags.push('<span class="tag good">线上</span>');
       if(o.days.length) tags.push('<span class="tag">' + o.days.map(function(d){ return DAY_NAME[d]; }).join('') + '</span>');
 
-      h += '<div class="rank-item enter" data-i="' + i + '" style="--i:' + i + '">';
+      // --i 决定入场延迟，封顶到 8：40 条的时候末条原本要等 1.7 秒才出现，
+      // 而 settle() 在 1.2 秒时就把后面那批强制显示了，看着像半截突然冒出来
+      h += '<div class="rank-item enter" data-i="' + i + '" style="--i:' + Math.min(i, 8) + '">';
       h += '<div class="rank-score"><div class="n" style="color:' + colorOf(mt.total) + '">' + mt.total + '</div><div class="u">匹配</div></div>';
       h += '<div class="rank-body"><div class="rank-title">' + esc((o.grade ? normGrade(o.grade) : '?') + ' ' + (o.subjects.join('、') || '?')) + '</div>';
       h += '<div class="rank-sub">' + esc(o.raw) + '</div>';
@@ -1236,6 +1242,9 @@ textarea::placeholder{color:var(--faint);opacity:.75}
 
     out.querySelectorAll('.rank-item').forEach(function(el){
       el.addEventListener('click', function(){
+        // 记下列表滚到哪了，返回时能回原位。不然点第 20 条看完回来，
+        // 列表重建后跳回顶部，得重新滚一遍
+        listScrollY = window.scrollY;
         var item = cache[+el.getAttribute('data-i')];
         openDetail(item, cache.length);
       });
@@ -1243,6 +1252,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     var bb = document.getElementById('bulkBtn');
     if(bb) bb.addEventListener('click', bulkCommute);
     settle(out);
+    if(listScrollY) window.scrollTo(0, listScrollY);
   }
 
   // 入场动画的兜底：动画一旦因任何原因没推进（内嵌浏览器、被扩展禁用、
@@ -1521,6 +1531,8 @@ textarea::placeholder{color:var(--faint);opacity:.75}
 
     var seq = ++splitSeq;
     splitInfo = {by:'rule', checked:false};
+    // 新分析从头看，别沿用上一次的滚动位置
+    listScrollY = 0;
     analyzeLines(byRule);
 
     // 规则已经给出结果了，能看就先看。只有规则明显没切开时才去问 AI，
@@ -1710,11 +1722,33 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       });
   }
 
-  // 这些错误码是 Key 本身的问题，不是「地名查不到」，必须原样报给用户
-  var AMAP_KEY_ERRORS = {'10001':1, '10002':1, '10003':1, '10004':1, '10005':1, '10006':1, '10007':1, '10009':1, '10044':1};
+  // 高德失败时 HTTP 仍是 200，只能靠 infocode 分原因。
+  // 「Key 不对」「请求太频繁」「当天额度用完」是三件事，混成一句的话
+  // 用户会照着错的方向去查——比如被限流了却去重新申请 Key。
+  var AMAP_KEY_ERRORS = {'10001':1, '10002':1, '10003':1, '10005':1, '10006':1, '10007':1, '10009':1};
+  var AMAP_QUOTA_ERRORS = {'10004':1, '10044':1};   // 10004 太频繁，10044 当天额度用完
 
   function isAmapKeyError(e){
     return !!(e && e.amap && AMAP_KEY_ERRORS[e.code]);
+  }
+
+  function isAmapQuotaError(e){
+    return !!(e && e.amap && AMAP_QUOTA_ERRORS[e.code]);
+  }
+
+  // 该原样抛给用户看的错误，不要被「地名查不到」的 catch 吞掉
+  function isAmapFatal(e){
+    return isAmapKeyError(e) || isAmapQuotaError(e);
+  }
+
+  function amapErrText(e){
+    if(!e || !e.amap) return '';
+    if(e.code === '10004') return '高德请求太频繁（10004），缓一下再试';
+    if(e.code === '10044') return '高德今天的免费额度用完了（10044），明天再来';
+    if(AMAP_KEY_ERRORS[e.code]){
+      return '高德 Key 无效或类型不对（' + (e.message || e.code) + '），确认申请的是「Web 服务」类型的 Key';
+    }
+    return '';
   }
 
   function amapLookup(text, city){
@@ -1732,7 +1766,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
         return {location:p.location, city:p.cityname || city || '', name:p.name || text};
       }
       return null;
-    }).catch(function(e){ if(isAmapKeyError(e)) throw e; return null; }).then(function(found){
+    }).catch(function(e){ if(isAmapFatal(e)) throw e; return null; }).then(function(found){
       if(found) return found;
       var geoParams = {address: text};
       if(city) geoParams.city = city;
@@ -1742,7 +1776,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
           return {location:g.location, city:g.city || city || '', name:g.formatted_address || text};
         }
         return null;
-      }).catch(function(e){ if(isAmapKeyError(e)) throw e; return null; });
+      }).catch(function(e){ if(isAmapFatal(e)) throw e; return null; });
     }).then(function(res){
       _geoCache[ck] = res;
       return res;
@@ -1766,7 +1800,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
         return {location:g.location, city:g.city || city || '', name:g.formatted_address || text};
       }
       return null;
-    }).catch(function(e){ if(isAmapKeyError(e)) throw e; return null; }).then(function(res){
+    }).catch(function(e){ if(isAmapFatal(e)) throw e; return null; }).then(function(res){
       _geoCache[ck] = res;
       return res;
     });
@@ -1861,9 +1895,8 @@ textarea::placeholder{color:var(--faint);opacity:.75}
         });
       });
     }).catch(function(err){
-      if(isAmapKeyError(err)){
-        return {ok:false, error:'高德 Key 无效或类型不对（' + (err.message || err.code) + '），确认申请的是「Web 服务」类型的 Key'};
-      }
+      var hint = amapErrText(err);
+      if(hint) return {ok:false, error: hint};
       return {ok:false, error:'高德请求失败：' + String((err && err.message) || err).slice(0, 160)};
     }).then(function(res){
       _routeCache[ck] = res;
@@ -1959,6 +1992,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
         }).then(function(r){ return r.json(); });
     req.then(function(res){
       if(!res || !res.ok){
+        markTried(o, '_aiTried', '_aiTries');
         o._aiState = 'fail';
         renderDetail(o, item.c, me, item.mt, total, aiArg(o), o._mapNote);
         return;
@@ -1974,9 +2008,18 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       // AI 可能补出地点，这时才有条件查地图
       if(needMap(o)) fetchCommute(item, total);
     }).catch(function(){
+      markTried(o, '_aiTried', '_aiTries');
       o._aiState = 'fail';
       renderDetail(o, item.c, me, item.mt, total, aiArg(o), o._mapNote);
     });
+  }
+
+  // 查询失败后要不要允许重试？
+  // 原来的做法是「试过就再也不试」——网络抖一下，这一单就永久停在「未知」，
+  // 用户点开多少次都没用。现在改成失败后放开，但同一单最多给 3 次。
+  function markTried(o, triedKey, triesKey){
+    o[triesKey] = (o[triesKey] || 0) + 1;
+    o[triedKey] = o[triesKey] >= 3;
   }
 
   function fetchCommute(item, total){
@@ -1994,7 +2037,9 @@ textarea::placeholder{color:var(--faint);opacity:.75}
         }).then(function(r){ return r.json(); });
     req.then(function(res){
       if(!res || !res.ok){
-        o._mapNote = {state:'fail', text:'地图没查到路线（' + ((res && res.error) || '未知原因') + '），距离按你手填的区域时间算'};
+        markTried(o, '_mapTried', '_mapTries');
+        o._mapNote = {state:'fail', text:'地图没查到路线（' + ((res && res.error) || '未知原因') + '），距离按你手填的区域时间算'
+          + (o._mapTries < 3 ? '，再点开一次会重试' : '')};
         renderDetail(o, item.c, me, item.mt, total, aiArg(o), o._mapNote);
         return;
       }
@@ -2015,6 +2060,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       item.mt = mt;
       renderDetail(o, c, me, mt, total, aiArg(o), o._mapNote);
     }).catch(function(){
+      markTried(o, '_mapTried', '_mapTries');
       o._mapNote = {state:'fail', text: mapDirect()
         ? '地图请求失败，距离按你手填的区域时间算'
         : '连不上本地服务，距离按你手填的区域时间算'};
@@ -2028,7 +2074,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
   // 这里给一个入口，把还没查过的单子一次性算完，再统一重排。
   // 走地理编码而不是 POI 搜索，配额才撑得住（5000/日 vs 100/日）。
   var BULK_CONCURRENCY = 3;
-  var bulkState = {running:false, failed:0};
+  var bulkState = {running:false, failed:0, abort:false, lastErr:''};
 
   function bulkPending(){
     // 后台模式不做批量：那边没有地理编码优先的通道，30 单会把 POI 配额打满
@@ -2067,7 +2113,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       return;
     }
 
-    bulkState = {running:true, failed:0};
+    bulkState = {running:true, failed:0, abort:false, lastErr:''};
     setBulkBar(true, '正在算真实通勤 0 / ' + todo.length, 0);
     bulkStep(todo, 0, splitSeq);
   }
@@ -2080,7 +2126,8 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       return;
     }
 
-    if(i >= todo.length){
+    // Key 无效、额度用完这种，再试下去每条都是同一个错，直接停
+    if(bulkState.abort || i >= todo.length){
       bulkState.running = false;
       setBulkBar(false);
       // 全部查完再重排，避免边查边跳
@@ -2088,8 +2135,12 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       var back = current && cache.indexOf(current) > -1 ? cache.indexOf(current) : -1;
       if(current && back > -1) openDetail(cache[back], cache.length);
       else renderList();
-      toast('算完了 ' + (todo.length - bulkState.failed) + ' 条'
-        + (bulkState.failed ? '，' + bulkState.failed + ' 条没查到' : ''));
+      if(bulkState.abort){
+        toast('停了：' + bulkState.lastErr);
+      }else{
+        toast('算完了 ' + (todo.length - bulkState.failed) + ' 条'
+          + (bulkState.failed ? '，' + bulkState.failed + ' 条没查到' + (bulkState.lastErr ? '（' + bulkState.lastErr + '）' : '') : ''));
+      }
       return;
     }
 
@@ -2105,7 +2156,14 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     var o = item.o;
     o._mapTried = true;
     return amapCommute(me.origin, o.location, o.city, {geocodeOnly:true}).then(function(res){
-      if(!res || !res.ok){ bulkState.failed++; return; }
+      if(!res || !res.ok){
+        markTried(o, '_mapTried', '_mapTries');
+        bulkState.failed++;
+        bulkState.lastErr = (res && res.error) || '未知原因';
+        // 这三类错误每条都会一样地失败，没必要把剩下的几十条都跑一遍
+        if(/Key 无效|额度用完|太频繁/.test(bulkState.lastErr)) bulkState.abort = true;
+        return;
+      }
       var d = res.data || {};
       o._realCommute = d.minutes;
       o._commuteMode = d.mode;
@@ -2116,7 +2174,10 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       o._commuteDest = d.destName || '';
       item.c = computeCost(o, me);
       item.mt = computeMatch(o, item.c, me);
-    }).catch(function(){ bulkState.failed++; });
+    }).catch(function(){
+      markTried(o, '_mapTried', '_mapTries');
+      bulkState.failed++;
+    });
   }
 
   function openDetail(item, total){
