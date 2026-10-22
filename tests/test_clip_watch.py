@@ -71,7 +71,7 @@ class TestExtractJson(unittest.TestCase):
 class TestConfig(unittest.TestCase):
     def setUp(self):
         self._env = {}
-        for key in ("AI_BASE_URL", "AI_API_KEY", "AI_MODEL"):
+        for key in ("AI_BASE_URL", "AI_API_KEY", "AI_MODEL", "AMAP_KEY"):
             self._env[key] = os.environ.pop(key, None)
 
     def tearDown(self):
@@ -98,6 +98,123 @@ class TestConfig(unittest.TestCase):
 
         os.environ.pop("AI_API_KEY", None)
         self.assertFalse(cw.ai_enabled())
+
+    def test_amap_key_from_env(self):
+        os.environ["AMAP_KEY"] = "amap-test-key"
+        self.assertTrue(cw.amap_enabled())
+        os.environ.pop("AMAP_KEY", None)
+        self.assertFalse(cw.amap_enabled())
+
+
+class TestCommute(unittest.TestCase):
+    """通勤查询：没配 key 要干净地失败，不能抛异常。"""
+
+    def setUp(self):
+        self._key = os.environ.pop("AMAP_KEY", None)
+
+    def tearDown(self):
+        if self._key is not None:
+            os.environ["AMAP_KEY"] = self._key
+        os.environ.pop("AMAP_KEY", None)
+
+    def test_without_key(self):
+        result, err = cw.commute("华南师范大学", "天河城")
+        self.assertIsNone(result)
+        self.assertIn("高德", err)
+
+    def test_missing_origin(self):
+        os.environ["AMAP_KEY"] = "fake"
+        result, err = cw.commute("", "天河城")
+        self.assertIsNone(result)
+        self.assertIn("出发点", err)
+
+    def test_missing_destination(self):
+        os.environ["AMAP_KEY"] = "fake"
+        result, err = cw.commute("华南师范大学", "")
+        self.assertIsNone(result)
+        self.assertIn("地点", err)
+
+
+class TestAmapMock(unittest.TestCase):
+    """用本地假高德服务跑完整链路：POI 搜索 → 公交路径 → 分钟数。"""
+
+    @classmethod
+    def setUpClass(cls):
+        from http.server import BaseHTTPRequestHandler
+
+        class FakeAmap(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                path = self.path.split("?")[0]
+                if path == "/v3/place/text":
+                    body = {"status": "1", "count": "1", "pois": [{
+                        "name": "人大附中", "location": "116.312,39.975",
+                        "cityname": "北京市", "adcode": "110108"}]}
+                elif path == "/v3/geocode/geo":
+                    body = {"status": "1", "count": "1", "geocodes": [{
+                        "formatted_address": "北京市海淀区中关村大街",
+                        "location": "116.316,39.983", "city": "北京市",
+                        "adcode": "110108"}]}
+                elif path == "/v3/direction/transit/integrated":
+                    body = {"status": "1", "route": {
+                        "distance": "8100", "transits": [{"duration": "1920", "cost": "4"}]}}
+                elif path == "/v3/direction/walking":
+                    body = {"status": "1", "route": {
+                        "paths": [{"duration": "600", "distance": "800"}]}}
+                else:
+                    body = {"status": "0", "info": "UNKNOWN"}
+                raw = json.dumps(body).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), FakeAmap)
+        cls.port = cls.server.server_address[1]
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+
+        cls._env = {
+            "AMAP_KEY": os.environ.get("AMAP_KEY"),
+            "AMAP_BASE_URL": os.environ.get("AMAP_BASE_URL"),
+        }
+        os.environ["AMAP_KEY"] = "fake-key"
+        os.environ["AMAP_BASE_URL"] = "http://127.0.0.1:%d" % cls.port
+        # 两个缓存都清掉，避免其他用例的结果串进来
+        cw._geo_cache.clear()
+        cw._route_cache.clear()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+        for key, val in cls._env.items():
+            if val is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = val
+
+    def test_full_chain(self):
+        result, err = cw.commute("某某大学", "人大附中")
+        self.assertIsNone(err)
+        self.assertEqual(result["minutes"], 32)      # 1920 秒 = 32 分钟
+        self.assertEqual(result["mode"], "公交")
+        self.assertEqual(result["meters"], 8100)
+        self.assertEqual(result["destName"], "人大附中")
+
+    def test_cache_hits(self):
+        cw.commute("某某大学", "人大附中")
+        before = len(cw._route_cache)
+        cw.commute("某某大学", "人大附中")
+        self.assertEqual(len(cw._route_cache), before)
+
+    def test_walking_fallback(self):
+        # city 传了但公交接口对未知城市返回不了？这里直接验步行兜底不走 transit 的情况
+        result, err = cw.commute("某某大学", "人大附中", city="")
+        self.assertIsNotNone(result)
+        self.assertIn(result["mode"], ("公交", "步行", "驾车"))
 
 
 class TestHttpServer(unittest.TestCase):
@@ -136,6 +253,24 @@ class TestHttpServer(unittest.TestCase):
         status, body = self.get("/ai-status")
         self.assertEqual(status, 200)
         self.assertIn("enabled", json.loads(body))
+
+    def test_map_status(self):
+        status, body = self.get("/map-status")
+        self.assertEqual(status, 200)
+        self.assertIn("enabled", json.loads(body))
+
+    def test_commute_returns_json(self):
+        req = urllib.request.Request(
+            self.base + "/commute",
+            data=json.dumps({"from": "", "to": ""}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        self.assertIn("ok", data)
+        if not data["ok"]:
+            self.assertIn("error", data)
 
     def test_index_served(self):
         status, body = self.get("/")

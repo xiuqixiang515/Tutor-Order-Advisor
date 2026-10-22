@@ -5,6 +5,10 @@
 常驻后台，盯着剪贴板。你在微信里复制一条家教单，
 旁边的页面会自动跳出匹配结果，不用再粘贴。
 
+可选：配了 AI Key 会补全单子里缺的字段，
+配了高德 Key 会按真实路线算通勤时间。
+两个都不配也能正常用。
+
 运行方式：双击「启动监听.bat」，或 python clip_watch.py
 退出：在这个窗口按 Ctrl + C
 """
@@ -17,6 +21,7 @@ import ssl
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
 import webbrowser
 from ctypes import wintypes
@@ -139,13 +144,18 @@ def _ssl_context():
 
 
 def load_config():
-    cfg = {"base_url": "", "api_key": "", "model": "", "timeout": 20}
+    cfg = {"base_url": "", "api_key": "", "model": "", "timeout": 20, "amap_key": ""}
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             cfg.update(json.load(f))
     except Exception:
         pass
-    for key, env in (("base_url", "AI_BASE_URL"), ("api_key", "AI_API_KEY"), ("model", "AI_MODEL")):
+    for key, env in (
+        ("base_url", "AI_BASE_URL"),
+        ("api_key", "AI_API_KEY"),
+        ("model", "AI_MODEL"),
+        ("amap_key", "AMAP_KEY"),
+    ):
         val = os.environ.get(env) or cfg.get(key) or ""
         cfg[key] = str(val).strip()
     return cfg
@@ -207,6 +217,191 @@ def call_ai(text):
         return extract_json(content), None
     except Exception as exc:
         return None, str(exc)[:220]
+
+
+# ---------------- 通勤时间（高德地图，可选） ----------------
+#
+# 只做两件事：把地名转成坐标，再按坐标算真实通勤时长。
+# 不猜、不编，查不到就返回 None，前端退回手填的区域分钟数。
+
+AMAP_BASE = "https://restapi.amap.com"
+_geo_cache = {}
+_route_cache = {}
+_cache_lock = threading.Lock()
+
+
+def amap_base():
+    """允许用 AMAP_BASE_URL 覆盖接口地址，主要给测试用。"""
+    return (os.environ.get("AMAP_BASE_URL") or AMAP_BASE).rstrip("/")
+
+
+def amap_enabled():
+    return bool(load_config().get("amap_key"))
+
+
+def _amap(path, params):
+    """调高德 Web 服务接口。高德失败时 HTTP 仍是 200，靠 status 字段判断。"""
+    cfg = load_config()
+    query = dict(params)
+    query["key"] = cfg["amap_key"]
+    query["output"] = "JSON"
+    url = amap_base() + path + "?" + urllib.parse.urlencode(query)
+    req = urllib.request.Request(url, headers={"User-Agent": "tutor-order-advisor/1.0"})
+    with urllib.request.urlopen(req, timeout=8, context=_ssl_context()) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    if str(data.get("status")) != "1":
+        raise RuntimeError(data.get("info") or "高德接口返回失败")
+    return data
+
+
+def lookup_place(text, city=""):
+    """地名 → {location, city, adcode, name}，找不到返回 None。
+
+    先走 POI 搜索（认「人大附中」「望京SOHO」这类具体地点），
+    失败再走地理编码（认「海淀区中关村大街1号」这类地址）。
+    """
+    text = (text or "").strip()
+    if not text:
+        return None
+    cache_key = (text, city)
+    with _cache_lock:
+        if cache_key in _geo_cache:
+            return _geo_cache[cache_key]
+
+    found = None
+    try:
+        params = {"keywords": text, "offset": 1, "page": 1}
+        if city:
+            params["city"] = city
+            params["citylimit"] = "true"
+        pois = _amap("/v3/place/text", params).get("pois") or []
+        if pois and pois[0].get("location"):
+            p = pois[0]
+            found = {
+                "location": p["location"],
+                "city": p.get("cityname") or city,
+                "adcode": str(p.get("adcode") or ""),
+                "name": p.get("name") or text,
+            }
+    except Exception:
+        pass
+
+    if found is None:
+        try:
+            params = {"address": text}
+            if city:
+                params["city"] = city
+            geos = _amap("/v3/geocode/geo", params).get("geocodes") or []
+            if geos and geos[0].get("location"):
+                g = geos[0]
+                found = {
+                    "location": g["location"],
+                    "city": g.get("city") or city,
+                    "adcode": str(g.get("adcode") or ""),
+                    "name": g.get("formatted_address") or text,
+                }
+        except Exception:
+            pass
+
+    with _cache_lock:
+        _geo_cache[cache_key] = found
+    return found
+
+
+def _seconds_to_minutes(seconds):
+    try:
+        m = int(round(float(seconds) / 60.0))
+    except (TypeError, ValueError):
+        return 0
+    return m if m > 0 else 0
+
+
+def route_between(origin_loc, dest_loc, city=""):
+    """两个坐标之间的通勤时长，返回 (分钟, 方式, 距离米) 或 None。
+
+    公交优先，步行和驾车兜底。家教单里同城短途居多，公交/地铁是最常见的通勤方式。
+    """
+    base = {"origin": origin_loc, "destination": dest_loc}
+
+    try:
+        q = dict(base, city=city, strategy=0, nightflag=0)
+        route = _amap("/v3/direction/transit/integrated", q).get("route") or {}
+        transits = route.get("transits") or []
+        if transits:
+            minutes = _seconds_to_minutes(transits[0].get("duration"))
+            if minutes:
+                return minutes, "公交", int(float(route.get("distance") or 0))
+    except Exception:
+        pass
+
+    try:
+        route = _amap("/v3/direction/walking", base).get("route") or {}
+        paths = route.get("paths") or []
+        if paths:
+            minutes = _seconds_to_minutes(paths[0].get("duration"))
+            if minutes:
+                return minutes, "步行", int(float(paths[0].get("distance") or 0))
+    except Exception:
+        pass
+
+    try:
+        route = _amap("/v3/direction/driving", base).get("route") or {}
+        paths = route.get("paths") or []
+        if paths:
+            minutes = _seconds_to_minutes(paths[0].get("duration"))
+            if minutes:
+                return minutes, "驾车", int(float(paths[0].get("distance") or 0))
+    except Exception:
+        pass
+
+    return None
+
+
+def commute(origin_text, dest_text, city=""):
+    """返回 (结果 dict, None) 或 (None, 错误说明)。"""
+    origin_text = (origin_text or "").strip()
+    dest_text = (dest_text or "").strip()
+    city = (city or "").strip()
+
+    if not amap_enabled():
+        return None, "没有配置高德 Key"
+    if not origin_text:
+        return None, "没有填出发点"
+    if not dest_text:
+        return None, "单子里没写地点"
+
+    cache_key = (origin_text, dest_text, city)
+    with _cache_lock:
+        if cache_key in _route_cache:
+            return _route_cache[cache_key], None
+
+    try:
+        origin = lookup_place(origin_text, city)
+        if not origin:
+            return None, "找不到出发点「%s」" % origin_text[:24]
+        scope = city or origin.get("city") or ""
+        dest = lookup_place(dest_text, scope)
+        if not dest:
+            return None, "找不到地点「%s」" % dest_text[:24]
+
+        found = route_between(origin["location"], dest["location"], scope)
+        if not found:
+            return None, "没查到通勤方案"
+
+        minutes, mode, meters = found
+        result = {
+            "minutes": minutes,
+            "mode": mode,
+            "meters": meters,
+            "originName": origin.get("name") or origin_text,
+            "destName": dest.get("name") or dest_text,
+        }
+    except Exception as exc:
+        return None, "高德请求失败：%s" % str(exc)[:180]
+
+    with _cache_lock:
+        _route_cache[cache_key] = result
+    return result, None
 
 
 # ---------------- 共享状态 ----------------
@@ -274,6 +469,11 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, payload.encode("utf-8"), "application/json; charset=utf-8")
             return
 
+        if path == "/map-status":
+            payload = json.dumps({"enabled": amap_enabled()}, ensure_ascii=False)
+            self._send(200, payload.encode("utf-8"), "application/json; charset=utf-8")
+            return
+
         if path in ("/", "/index.html"):
             try:
                 with open(HTML_PATH, "rb") as f:
@@ -285,37 +485,59 @@ class Handler(BaseHTTPRequestHandler):
 
         self._send(404, b"not found", "text/plain; charset=utf-8")
 
-    def do_POST(self):
-        path = self.path.split("?")[0]
-        if path != "/parse":
-            self._send(404, b'{"ok":false}', "application/json; charset=utf-8")
-            return
-
+    def _read_json(self, limit=20000):
+        """读请求体并解析 JSON，失败返回 None。"""
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
-            length = 0
-        if length <= 0 or length > 20000:
-            self._send(400, b'{"ok":false,"error":"length"}', "application/json; charset=utf-8")
-            return
-
+            return None
+        if length <= 0 or length > limit:
+            return None
         try:
-            body = json.loads(self.rfile.read(length).decode("utf-8"))
-            text = (body.get("text") or "").strip()
+            return json.loads(self.rfile.read(length).decode("utf-8"))
         except Exception:
-            self._send(400, b'{"ok":false,"error":"json"}', "application/json; charset=utf-8")
+            return None
+
+    def _json(self, payload, code=200):
+        self._send(code, json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                   "application/json; charset=utf-8")
+
+    def do_POST(self):
+        path = self.path.split("?")[0]
+
+        if path == "/parse":
+            body = self._read_json()
+            if body is None:
+                self._json({"ok": False, "error": "json"}, 400)
+                return
+            text = (body.get("text") or "").strip()
+            if not text:
+                self._json({"ok": False, "error": "empty"}, 400)
+                return
+            data, err = call_ai(text)
+            if data is None:
+                self._json({"ok": False, "error": err})
+            else:
+                self._json({"ok": True, "data": data})
             return
 
-        if not text:
-            self._send(400, b'{"ok":false,"error":"empty"}', "application/json; charset=utf-8")
+        if path == "/commute":
+            body = self._read_json()
+            if body is None:
+                self._json({"ok": False, "error": "json"}, 400)
+                return
+            result, err = commute(
+                body.get("from") or "",
+                body.get("to") or "",
+                body.get("city") or "",
+            )
+            if result is None:
+                self._json({"ok": False, "error": err})
+            else:
+                self._json({"ok": True, "data": result})
             return
 
-        data, err = call_ai(text)
-        if data is None:
-            payload = json.dumps({"ok": False, "error": err}, ensure_ascii=False)
-        else:
-            payload = json.dumps({"ok": True, "data": data}, ensure_ascii=False)
-        self._send(200, payload.encode("utf-8"), "application/json; charset=utf-8")
+        self._send(404, b'{"ok":false}', "application/json; charset=utf-8")
 
 
 def main():
@@ -355,6 +577,10 @@ def main():
     else:
         print("  AI     未配置 · 只用规则解析")
         print("         想开启就在同目录建 config.json，参考 config.example.json")
+    if amap_enabled():
+        print("  地图   高德已配置 · 按真实通勤时间算距离")
+    else:
+        print("  地图   未配置 · 距离按你手填的区域分钟数算")
     print("  退出   在这个窗口按 Ctrl + C")
     print()
 

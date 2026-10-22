@@ -2,5 +2,6 @@
   "base_url": "https://api.deepseek.com/v1",
   "api_key": "把这里换成你的 API Key",
   "model": "deepseek-chat",
-  "timeout": 20
+  "timeout": 20,
+  "amap_key": "把这里换成高德 Web 服务 Key（用于算真实通勤时间，不填则用手填的区域分钟数）"
 }
