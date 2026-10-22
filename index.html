@@ -1486,8 +1486,18 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       })
     }).then(function(r){
       if(r.ok){
-        el.textContent = '连上了，「' + api.aiModel + '」可以用。AI 补全和拆单都已生效。';
-        return;
+        // 把本次的真实用量带回来。用户盯控制台的「请求次数」判断调没调上，
+        // 但那个统计有延迟、又是按天聚合的，一次测试根本看不出来——
+        // 响应体里的 usage 是模型当场算好的，这是"请求真的发出去了"的直接证据。
+        return r.json().then(function(d){
+          var u = d && d.usage;
+          var tk = u && (u.total_tokens || (u.prompt_tokens || 0) + (u.completion_tokens || 0));
+          el.textContent = '连上了，「' + api.aiModel + '」可以用，本次请求消耗了 '
+            + (tk || 0) + ' tokens（测试只让模型回 4 个字；拆单一次通常几百到一千多，也就几厘钱）。'
+            + 'AI 拆单和读字段都已生效。';
+        }).catch(function(){
+          el.textContent = '连上了，「' + api.aiModel + '」可以用。AI 拆单和读字段都已生效。';
+        });
       }
       return r.text().then(function(t){
         var extra = '';
