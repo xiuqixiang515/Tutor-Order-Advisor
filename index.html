@@ -1179,7 +1179,12 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     var out = document.getElementById('out');
     if(!cache.length) return;
 
-    var h = '<div class="panel-title" style="margin-bottom:2px"><span>按匹配度排序 · 共 ' + cache.length + ' 条</span><span>点一条看详情</span></div>';
+    var mark;
+    if(splitInfo.by === 'ai') mark = '<span class="tag good">AI 拆分</span>';
+    else if(splitInfo.checked) mark = '<span class="tag">规则拆分 · AI 复核过</span>';
+    else mark = '<span class="tag">规则拆分</span>';
+
+    var h = '<div class="panel-title" style="margin-bottom:2px"><span>按匹配度排序 · 共 ' + cache.length + ' 条 · ' + mark + '</span><span>点一条看详情</span></div>';
     cache.forEach(function(item, i){
       var o = item.o, mt = item.mt, tags = [];
       if(mt.blocked.length) tags.push('<span class="tag bad">硬性不符</span>');
@@ -1323,11 +1328,25 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     var el = document.getElementById('apiHint');
     if(!el) return;
     var bits = [];
-    if(aiDirect()) bits.push('AI 直连已开启');
-    if(mapDirect()) bits.push('高德直连已开启');
-    el.textContent = bits.length
-      ? bits.join(' · ') + '。Key 只存在这台设备的浏览器里，不会上传。'
-      : 'Key 只存在这台设备的浏览器里，不会上传到任何服务器。';
+    if(aiDirect()) bits.push('AI 已开启（补全和拆单都能用）');
+    if(mapDirect()) bits.push('高德已开启');
+
+    // 填了两项、漏了一项的情况最容易让人以为配好了：三项齐了才会生效
+    var miss = [];
+    if(!api.aiBase) miss.push('接口地址');
+    if(!api.aiKey) miss.push('API Key');
+    if(!api.aiModel) miss.push('模型名');
+    if(!aiDirect() && (api.aiBase || api.aiKey || api.aiModel)){
+      el.textContent = 'AI 还差「' + miss.join('、') + '」没填，三项都填了才会生效。';
+      return;
+    }
+
+    if(!bits.length){
+      // 没配的时候要说清楚少的是什么，不然用户以为功能坏了
+      el.textContent = '还没填 Key：AI 补全、AI 拆单、高德通勤都用不了，只按规则跑。Key 只存在这台设备的浏览器里，不会上传。';
+      return;
+    }
+    el.textContent = bits.join(' · ') + '。Key 只存在这台设备的浏览器里，不会上传。';
   }
 
   function readApiForm(){
@@ -1441,6 +1460,10 @@ textarea::placeholder{color:var(--faint);opacity:.75}
   // （用户连粘两条时，第一条的 AI 回复不能盖掉第二条）
   var splitSeq = 0;
 
+  // 这批单子是谁拆的。要显示出来——不然 AI 静默介入或静默失败，
+  // 用户根本无从判断它到底工作没有。
+  var splitInfo = {by:'rule', checked:false};
+
   function analyzeLines(lines){
     cache = lines.map(function(line){
       var o = parseOrder(line);
@@ -1461,16 +1484,31 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     if(!byRule.length) return;
 
     var seq = ++splitSeq;
+    splitInfo = {by:'rule', checked:false};
     analyzeLines(byRule);
 
     // 规则已经给出结果了，能看就先看。只有规则明显没切开时才去问 AI，
     // 问了也是回来校正，不阻塞在上面干等。
     if(!shouldAskSplit(raw, byRule)) return;
     aiSplit(raw).then(function(res){
-      if(!res.ok || seq !== splitSeq) return;
+      if(seq !== splitSeq) return;
+      if(!res.ok){
+        toast('AI 没能接手拆单：' + res.error);
+        return;
+      }
       var byAi = cutByStarts(raw, res.starts);
-      if(!aiSplitTrusted(byAi, byRule, raw)) return;
-      if(sameSplit(byAi, byRule)) return;
+      if(!aiSplitTrusted(byAi, byRule, raw)){
+        toast('AI 的拆法不太对，还是按规则的来');
+        return;
+      }
+      if(sameSplit(byAi, byRule)){
+        // 结果没变，但要让用户知道 AI 确实看过一遍
+        splitInfo = {by:'rule', checked:true};
+        if(cache.length > 1) renderList();
+        toast('AI 看过一遍，切法和你现在看到的一样');
+        return;
+      }
+      splitInfo = {by:'ai', checked:true};
       analyzeLines(byAi);
       toast('AI 把这段拆成了 ' + byAi.length + ' 条');
     }).catch(function(){});
