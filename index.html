@@ -274,7 +274,18 @@ textarea::placeholder{color:var(--faint);opacity:.75}
 }
 .st .v small{font-weight:var(--w-body);font-size:11px;color:var(--faint);margin-left:2px}
 
-/* 通勤：一条比例条把「上课」和「路上」摊开，上面标出行方式 */
+/* 通勤：一条比例条把「上课」和「路上」摊开，上面标出行方式 *//* 批量算通勤的进度条 */
+.bulkbar{
+  display:flex;align-items:center;gap:11px;
+  background:var(--s1);border-radius:10px;padding:9px 13px;margin-bottom:10px;
+}
+.bulkbar[hidden]{display:none}
+.bulk-t{font-size:12px;color:var(--muted);flex-shrink:0}
+.bulk-track{flex:1;height:5px;border-radius:3px;background:var(--s3);overflow:hidden}
+.bulk-track i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s ease}
+.linklike{color:var(--accent);cursor:pointer}
+.linklike:hover{text-decoration:underline}
+
 .cm{background:var(--s1);border-radius:11px;padding:13px 14px}
 .cm-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
 .cm-mode{
@@ -539,12 +550,18 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       <div class="chips" id="samples"></div>
     </section>
 
-    <section class="panel" id="out">
-      <div class="placeholder">
-        <div class="big">还没有单子</div>
-        <div class="sub">左边粘一条群消息，我会拿它跟你的条件逐项对。<br>粘贴多条时会自动按匹配度排序，先看最值得回的那条。</div>
+    <div id="outWrap">
+      <div class="bulkbar" id="bulkBar" hidden>
+        <span class="bulk-t" id="bulkText">正在算真实通勤</span>
+        <span class="bulk-track"><i id="bulkFill"></i></span>
       </div>
-    </section>
+      <section class="panel" id="out">
+        <div class="placeholder">
+          <div class="big">还没有单子</div>
+          <div class="sub">左边粘一条群消息，我会拿它跟你的条件逐项对。<br>粘贴多条时会自动按匹配度排序，先看最值得回的那条。</div>
+        </div>
+      </section>
+    </div>
   </div>
 </div>
 
@@ -895,12 +912,18 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       var locTxt = String(o.location || '');
       if(locTxt.length > 18) locTxt = locTxt.slice(0, 18) + '…';
       dist = 55; distNote = '「' + locTxt + '」这个地点还没配通勤时间，按边界值估算';
-    } else if(c.commuteMin <= cfg.maxCommute){
-      dist = 100 - (c.commuteMin / Math.max(1, cfg.maxCommute)) * 45;
-      distNote = '单程约 ' + Math.round(c.commuteMin) + ' 分钟，在你能接受的范围内';
     } else {
-      dist = Math.max(0, 40 * (1 - (c.commuteMin - cfg.maxCommute) / Math.max(1, cfg.maxCommute)));
-      distNote = '单程约 ' + Math.round(c.commuteMin) + ' 分钟，超过你能接受的 ' + cfg.maxCommute + ' 分钟';
+      // 分成两段，接点必须落在同一个分上。原来上限内给 55、超一分钟就给 40，
+      // 刚好卡在阈值附近的单子会因为差几十秒掉十几分。
+      var maxM = Math.max(1, cfg.maxCommute);
+      var ratio = c.commuteMin / maxM;
+      if(ratio <= 1){
+        dist = 100 - 40 * ratio;              // 0 分钟 100 分，正好到上限 60 分
+        distNote = '单程约 ' + Math.round(c.commuteMin) + ' 分钟，在你能接受的范围内';
+      } else {
+        dist = Math.max(0, 60 * (2 - ratio)); // 上限处 60 分，两倍上限归零
+        distNote = '单程约 ' + Math.round(c.commuteMin) + ' 分钟，超过你能接受的 ' + cfg.maxCommute + ' 分钟';
+      }
     }
     if(c.commuteSrc === 'map' && !o.isOnline){
       distNote += '（高德实测' + (o._commuteMode ? '·' + o._commuteMode : '') + '）';
@@ -1179,16 +1202,27 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     var out = document.getElementById('out');
     if(!cache.length) return;
 
+    // 详情页里查到真实通勤后分数会变，这里按最新分数再排一次，
+    // 否则返回列表会看到「分数变了但位置没动」
+    cache.sort(function(a, b){ return b.mt.total - a.mt.total; });
+
     var mark;
     if(splitInfo.by === 'ai') mark = '<span class="tag good">AI 拆分</span>';
     else if(splitInfo.checked) mark = '<span class="tag">规则拆分 · AI 复核过</span>';
     else mark = '<span class="tag">规则拆分</span>';
 
-    var h = '<div class="panel-title" style="margin-bottom:2px"><span>按匹配度排序 · 共 ' + cache.length + ' 条 · ' + mark + '</span><span>点一条看详情</span></div>';
+    var pend = bulkPending();
+    var right = pend
+      ? '<span class="linklike" id="bulkBtn">算全部通勤（' + pend + ' 条）</span>'
+      : '<span>点一条看详情</span>';
+
+    var h = '<div class="panel-title" style="margin-bottom:2px"><span>按匹配度排序 · 共 ' + cache.length + ' 条 · ' + mark + '</span>' + right + '</div>';
     cache.forEach(function(item, i){
       var o = item.o, mt = item.mt, tags = [];
       if(mt.blocked.length) tags.push('<span class="tag bad">硬性不符</span>');
       if(item.c.netRate > 0) tags.push('<span class="tag">净时薪 ' + Math.round(item.c.netRate) + '</span>');
+      // 通勤没查过的话，净时薪也是按上限估的，标出来免得当成实测值
+      if(!o.isOnline && !item.c.commuteKnown) tags.push('<span class="tag">距离待查</span>');
       if(o.isOnline) tags.push('<span class="tag good">线上</span>');
       if(o.days.length) tags.push('<span class="tag">' + o.days.map(function(d){ return DAY_NAME[d]; }).join('') + '</span>');
 
@@ -1206,6 +1240,8 @@ textarea::placeholder{color:var(--faint);opacity:.75}
         openDetail(item, cache.length);
       });
     });
+    var bb = document.getElementById('bulkBtn');
+    if(bb) bb.addEventListener('click', bulkCommute);
     settle(out);
   }
 
@@ -1713,6 +1749,29 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     });
   }
 
+  // 只走地理编码，不打 POI 搜索。批量预查用这个——
+  // 地理编码 5000 次/日，POI 搜索只有 100 次/日。
+  // 30 单全走 POI 的话一天就废了，走地理编码才撑得住。
+  function amapGeocodeOnly(text, city){
+    text = String(text || '').trim();
+    if(!text) return Promise.resolve(null);
+    var ck = 'geo:' + text + '|' + (city || '');
+    if(_geoCache.hasOwnProperty(ck)) return Promise.resolve(_geoCache[ck]);
+
+    var params = {address: text};
+    if(city) params.city = city;
+    return amapGet('/v3/geocode/geo', params).then(function(d){
+      var g = (d.geocodes || [])[0];
+      if(g && g.location){
+        return {location:g.location, city:g.city || city || '', name:g.formatted_address || text};
+      }
+      return null;
+    }).catch(function(e){ if(isAmapKeyError(e)) throw e; return null; }).then(function(res){
+      _geoCache[ck] = res;
+      return res;
+    });
+  }
+
   function amapMinutes(sec){
     var m = Math.round((parseFloat(sec) || 0) / 60);
     return m > 0 ? m : 0;
@@ -1769,20 +1828,23 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     });
   }
 
-  function amapCommute(fromText, toText, city){
+  function amapCommute(fromText, toText, city, opts){
+    opts = opts || {};
+    // 批量预查时只走地理编码，省下 POI 搜索的配额
+    var find = opts.geocodeOnly ? amapGeocodeOnly : amapLookup;
     fromText = String(fromText || '').trim();
     toText = String(toText || '').trim();
     if(!fromText) return Promise.resolve({ok:false, error:'没有填出发点'});
     if(!toText) return Promise.resolve({ok:false, error:'单子里没写地点'});
 
-    var ck = fromText + '|' + toText + '|' + (city || '');
+    var ck = fromText + '|' + toText + '|' + (city || '') + (opts.geocodeOnly ? '|geo' : '');
     if(_routeCache.hasOwnProperty(ck)) return Promise.resolve(_routeCache[ck]);
 
-    return amapLookup(fromText, '').then(function(origin){
+    return find(fromText, '').then(function(origin){
       if(!origin) return {ok:false, error:'找不到出发点「' + fromText.slice(0, 24) + '」'};
       // 目的地优先按单子里写的城市限定，否则同名小区会搜到外地去
       var scope = city || origin.city || '';
-      return amapLookup(toText, scope).then(function(dest){
+      return find(toText, scope).then(function(dest){
         if(!dest) return {ok:false, error:'找不到地点「' + toText.slice(0, 24) + '」'};
         return amapRoute(origin.location, dest.location, scope).then(function(found){
           if(!found) return {ok:false, error:'没查到通勤方案'};
@@ -1958,6 +2020,103 @@ textarea::placeholder{color:var(--faint);opacity:.75}
         : '连不上本地服务，距离按你手填的区域时间算'};
       renderDetail(o, item.c, me, item.mt, total, aiArg(o), o._mapNote);
     });
+  }
+
+  // ---- 批量算通勤 ----
+  // 列表页不知道真实通勤，距离只能按上限兜底；只有点开详情才去查，
+  // 于是同一个单子在列表和详情里是两个分数，表现出来就是「点开就掉分」。
+  // 这里给一个入口，把还没查过的单子一次性算完，再统一重排。
+  // 走地理编码而不是 POI 搜索，配额才撑得住（5000/日 vs 100/日）。
+  var BULK_CONCURRENCY = 3;
+  var bulkState = {running:false, failed:0};
+
+  function bulkPending(){
+    // 后台模式不做批量：那边没有地理编码优先的通道，30 单会把 POI 配额打满
+    if(!mapDirect() || !me.origin) return 0;
+    return cache.filter(function(it){
+      var o = it.o;
+      return !o.isOnline && o.location && o._realCommute == null && !o._mapTried;
+    }).length;
+  }
+
+  function setBulkBar(show, text, pct){
+    var bar = document.getElementById('bulkBar');
+    if(!bar) return;
+    bar.hidden = !show;
+    if(!show) return;
+    document.getElementById('bulkText').textContent = text || '';
+    document.getElementById('bulkFill').style.width = (pct || 0) + '%';
+  }
+
+  function bulkCommute(){
+    if(bulkState.running) return;
+    if(!mapDirect()){
+      toast('批量算通勤需要在「接口配置」里填高德 Key');
+      return;
+    }
+    if(!me.origin){
+      toast('先在「设条件」里填「我的出发点」');
+      return;
+    }
+    var todo = cache.filter(function(it){
+      var o = it.o;
+      return !o.isOnline && o.location && o._realCommute == null && !o._mapTried;
+    });
+    if(!todo.length){
+      toast('这些单子的通勤都已经算过了');
+      return;
+    }
+
+    bulkState = {running:true, failed:0};
+    setBulkBar(true, '正在算真实通勤 0 / ' + todo.length, 0);
+    bulkStep(todo, 0, splitSeq);
+  }
+
+  function bulkStep(todo, i, seq){
+    // 用户中途又粘了新内容，这批结果作废
+    if(seq !== splitSeq || !bulkState.running){
+      bulkState.running = false;
+      setBulkBar(false);
+      return;
+    }
+
+    if(i >= todo.length){
+      bulkState.running = false;
+      setBulkBar(false);
+      // 全部查完再重排，避免边查边跳
+      cache.sort(function(a, b){ return b.mt.total - a.mt.total; });
+      var back = current && cache.indexOf(current) > -1 ? cache.indexOf(current) : -1;
+      if(current && back > -1) openDetail(cache[back], cache.length);
+      else renderList();
+      toast('算完了 ' + (todo.length - bulkState.failed) + ' 条'
+        + (bulkState.failed ? '，' + bulkState.failed + ' 条没查到' : ''));
+      return;
+    }
+
+    var batch = todo.slice(i, i + BULK_CONCURRENCY);
+    Promise.all(batch.map(function(item){ return bulkOne(item); })).then(function(){
+      var done = Math.min(i + batch.length, todo.length);
+      setBulkBar(true, '正在算真实通勤 ' + done + ' / ' + todo.length, Math.round(done / todo.length * 100));
+      bulkStep(todo, i + BULK_CONCURRENCY, seq);
+    });
+  }
+
+  function bulkOne(item){
+    var o = item.o;
+    o._mapTried = true;
+    return amapCommute(me.origin, o.location, o.city, {geocodeOnly:true}).then(function(res){
+      if(!res || !res.ok){ bulkState.failed++; return; }
+      var d = res.data || {};
+      o._realCommute = d.minutes;
+      o._commuteMode = d.mode;
+      o._commuteLines = d.lines || [];
+      o._commuteTransfers = d.transfers || 0;
+      o._commuteWalk = d.walkMeters || 0;
+      o._commuteMeters = d.meters || 0;
+      o._commuteDest = d.destName || '';
+      item.c = computeCost(o, me);
+      item.mt = computeMatch(o, item.c, me);
+    }).catch(function(){ bulkState.failed++; });
   }
 
   function openDetail(item, total){
