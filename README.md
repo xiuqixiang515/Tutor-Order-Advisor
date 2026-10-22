@@ -54,10 +54,18 @@
 
 **前置条件**：Windows 10 / 11，Python 3.9 或更高版本（[下载](https://www.python.org/downloads/)，安装时勾选 `Add python.exe to PATH`）。
 
+**拿到代码**，两种方式选一种。
+
+不想装 git 就下 ZIP，点这一下就行：[下载 ZIP](https://github.com/xiuqixiang515/Tutor-Order-Advisor/archive/refs/heads/main.zip)，解压到一个你找得到的位置（比如桌面）。
+
+装了 git 的话：
+
 ```bash
-git clone https://github.com/<你的用户名>/tutor-order-advisor.git
-cd tutor-order-advisor
+git clone https://github.com/xiuqixiang515/Tutor-Order-Advisor.git
+cd Tutor-Order-Advisor
 ```
+
+> 解压后的文件夹叫 `Tutor-Order-Advisor-main`，`git clone` 出来的叫 `Tutor-Order-Advisor`，名字不一样都不影响，认准里面有 `启动监听.bat` 和 `index.html` 那一层就行。
 
 然后双击 **`启动监听.bat`**。会弹出一个黑色窗口和浏览器页面：
 
@@ -297,6 +305,9 @@ python clip_watch.py --no-open
 
 **杀毒软件报警？**
 程序会读剪贴板 + 起本地端口 + 开浏览器，行为上确实像"疑似监控软件"。后台只有 `clip_watch.py` 一个文件、六百多行，纯标准库无依赖，全部可读，自己扫一遍就知道了。不放心可以不双击 bat，直接用命令行跑 `python clip_watch.py`。
+
+**从 GitHub 下载 ZIP 解压后，双击 bat 弹「Windows 已保护你的电脑」？**
+浏览器给下载的文件打了「来自 Internet」标记，Windows 对带这个标记的脚本会拦一下。点「更多信息」→「仍要运行」即可。介意的话，右键 ZIP 属性勾选「解除锁定」再解压，就不会有这个提示。
 
 **能做成手机 App 吗？**
 技术上不行。iOS 不允许网页后台读剪贴板，Android 的通知监听也受各家 ROM 限制。可行的折中是：手机复制 → 微信"文件传输助手"发到电脑 → 电脑复制。多两步，但跨设备能用。
