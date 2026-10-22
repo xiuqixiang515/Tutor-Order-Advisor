@@ -244,12 +244,14 @@ tr:last-child td{border-bottom:0}
 <p>规则先跑，一秒内出结果，该显示的立刻显示。然后如果发现关键字段缺失，才在后台调一次 AI，拿到结果后补上并重算匹配度。所以<strong>速度不受影响</strong>，AI 只负责填空，不会改掉规则已经认出来的内容。</p>
 
 <h4>怎么配</h4>
+<p><strong>推荐在页面上填</strong>，不用碰任何文件：点右上角「设条件」，拉到最下面的「接口配置」，填 AI 接口地址、API Key、模型名三项，收起面板就生效。</p>
 <ol class="steps">
   <li>去模型厂商那边申请一个 API Key，DeepSeek、Kimi、智谱、通义选一个，注册后充几块钱。</li>
-  <li>在工具文件夹里，把 <code>config.example.json</code> 复制一份，改名为 <code>config.json</code>。</li>
-  <li>用记事本打开，把 <code>api_key</code> 那一行的值换成你申请到的 key。</li>
-  <li>保存，重启监听程序。黑色窗口里会多一行「AI 已开启」。</li>
+  <li>页面「设条件 → 接口配置」里填三项：地址 <code>https://api.deepseek.com/v1</code>、你的 Key、模型名 <code>deepseek-chat</code>。</li>
+  <li>收起面板，随便粘一条单子试，能补全就说明通了。</li>
 </ol>
+<p class="sub">Key 只存在这台设备的浏览器里，不上传。换手机或换电脑时，点「导出配置」复制那段文字，到新设备点「导入配置」粘进去，不用重填。</p>
+<p class="sub">不想在页面上填、或者只想让电脑后台用，也可以照老办法：把 <code>config.example.json</code> 复制成 <code>config.json</code>，填好 <code>api_key</code>，重启监听程序。两种都配了以页面里填的为准。</p>
 
 <h4>常见厂商怎么填</h4>
 <table class="vtab">
@@ -289,10 +291,10 @@ tr:last-child td{border-bottom:0}
   <li>进控制台，创建一个应用，名字随便起。</li>
   <li>给这个应用添加一个 Key，<strong>服务平台选「Web 服务」</strong>，提交。</li>
   <li>复制生成的那串 Key。</li>
-  <li>打开 <code>config.json</code>，填到 <code>amap_key</code> 那一行，保存，重启监听程序。</li>
+  <li>粘到页面「设条件 → 接口配置 → 高德 Key」里，收起面板就生效；也可以填进 <code>config.json</code> 的 <code>amap_key</code> 再重启监听程序。</li>
 </ol>
 
-<p>重启后黑窗口里会多一行「地图   高德已配置」。然后回到页面，在「设条件 → 在哪教」里填<strong>我的出发点</strong>——学校、宿舍、常去的自习室、地铁站都行，高德认得的地名就行。</p>
+<p>然后回到「设条件 → 在哪教」里填<strong>我的出发点</strong>——学校、宿舍、常去的自习室、地铁站都行，高德认得的地名就行。</p>
 
 <div class="note warn">
   <div class="t">Key 类型别选错</div>
@@ -381,12 +383,17 @@ tr:last-child td{border-bottom:0}
   如果你也用 Android 手机，可以在手机上装「手机连接」（Phone Link）并开启跨设备复制粘贴。这样手机上复制的东西会同步到电脑剪贴板，监听程序一样能捕获。延迟通常一两秒，够用但不稳定，适合当补充，不适合当主力。
 </div>
 
+<div class="note">
+  <div class="t">手机上也能用，只是要手动粘</div>
+  页面本身是独立的，不依赖后台。把它放到 GitHub Pages 后，手机浏览器访问同一个地址，长按复制单子、切过去点「从剪贴板读取并分析」，打分和话术一样出。AI 和高德在页面「接口配置」里填一次也能用。唯一的区别是没有「复制就自动弹结果」。
+</div>
+
 <h2 id="boundary"><span class="num">11</span>边界</h2>
 
 <h3>它不做的事</h3>
 <ul>
   <li><strong>不碰微信协议。</strong>不用第三方登录、不 hook、不破解。所以不存在封号风险，也不会有法律问题。</li>
-  <li><strong>不联网。</strong>所有分析在本机完成，剪贴板内容不会发送到任何服务器。断网也能正常用。</li>
+  <li><strong>默认不联网。</strong>所有规则解析在本机完成，剪贴板内容不会发到任何服务器，断网也能用。只有你自己配了 AI 或高德、并且真的触发了补全或算路，才会把这一条单子的原文或地点发出去。</li>
   <li><strong>不保存历史。</strong>关掉页面，这一单的分析就没了。你的接单条件只存在浏览器本地存储里。</li>
 </ul>
 

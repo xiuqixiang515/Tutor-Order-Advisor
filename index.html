@@ -389,7 +389,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
         <div class="fld" style="grid-column:1/-1">
           <label>我的出发点（用地图算通勤时必填）</label>
           <input type="text" id="fOrigin" placeholder="华南师范大学 / 天河区体育西路">
-          <div class="h">填了并且后台配了高德 Key，就会按真实路线算单程分钟数；不填则用下面的区域时间。</div>
+          <div class="h">填了并且配过高德 Key（下面「接口配置」里填，或本地 config.json），就会按真实路线算单程分钟数；不填则用下面的区域时间。</div>
         </div>
         <div class="fld" style="grid-column:1/-1">
           <label>常去区域和单程时间</label>
@@ -462,6 +462,34 @@ textarea::placeholder{color:var(--faint);opacity:.75}
           <input type="text" id="fCard">
         </div>
       </div>
+    </div>
+
+    <div class="group">
+      <div class="group-t">接口配置（可选）</div>
+      <div class="row" style="grid-template-columns:1fr 1fr">
+        <div class="fld" style="grid-column:1/-1">
+          <label>AI 接口地址</label>
+          <input type="text" id="fAiBase" placeholder="https://api.deepseek.com/v1">
+        </div>
+        <div class="fld" style="grid-column:1/-1">
+          <label>AI API Key</label>
+          <input type="password" id="fAiKey" placeholder="sk-...">
+        </div>
+        <div class="fld">
+          <label>模型名</label>
+          <input type="text" id="fAiModel" placeholder="deepseek-chat">
+        </div>
+        <div class="fld">
+          <label>高德 Key（Web 服务）</label>
+          <input type="password" id="fAmapKey" placeholder="不填就不用地图">
+        </div>
+      </div>
+      <div class="fld"><div class="h" style="margin-top:0">填在这里就由浏览器直接调接口，不用启动后台，手机上也一样。四项都留空则用本地 <code>config.json</code>（需要后台开着）。</div></div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="btn-ghost" id="apiExport" type="button">导出配置</button>
+        <button class="btn-ghost" id="apiImport" type="button">导入配置</button>
+      </div>
+      <div class="fld"><div class="h" id="apiHint">Key 只存在这台设备的浏览器里，不会上传到任何服务器。</div></div>
     </div>
     </div>
   </div>
@@ -1071,6 +1099,86 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     document.getElementById('fExclude').value = Array.isArray(me.exclude) ? me.exclude.join(', ') : me.exclude;
     document.getElementById('fCount').value = me.count;
     document.getElementById('fCard').value = me.card;
+    document.getElementById('fAiBase').value = api.aiBase;
+    document.getElementById('fAiKey').value = api.aiKey;
+    document.getElementById('fAiModel').value = api.aiModel;
+    document.getElementById('fAmapKey').value = api.amapKey;
+    renderApiHint();
+  }
+
+  function renderApiHint(){
+    var el = document.getElementById('apiHint');
+    if(!el) return;
+    var bits = [];
+    if(aiDirect()) bits.push('AI 直连已开启');
+    if(mapDirect()) bits.push('高德直连已开启');
+    el.textContent = bits.length
+      ? bits.join(' · ') + '。Key 只存在这台设备的浏览器里，不会上传。'
+      : 'Key 只存在这台设备的浏览器里，不会上传到任何服务器。';
+  }
+
+  function readApiForm(){
+    api.aiBase = document.getElementById('fAiBase').value.trim();
+    api.aiKey = document.getElementById('fAiKey').value.trim();
+    api.aiModel = document.getElementById('fAiModel').value.trim();
+    api.amapKey = document.getElementById('fAmapKey').value.trim();
+    saveApi();
+    renderApiHint();
+  }
+
+  var apiTimer = null;
+  function onApiChanged(){
+    readApiForm();
+    clearTimeout(apiTimer);
+    apiTimer = setTimeout(function(){
+      // 配置变了，之前的判定、AI 结果和路线缓存全部作废
+      _geoCache = {};
+      _routeCache = {};
+      cache.forEach(function(it){
+        it.o._aiTried = false;
+        it.o._aiState = null;
+        it.o._aiFilled = null;
+        it.o._realCommute = null;
+        it.o._mapTried = false;
+        it.o._mapNote = null;
+      });
+      initAi();
+      initMap();
+      if(current) openDetail(current, cache.length || 1);
+    }, 600);
+  }
+
+  function exportApi(){
+    readApiForm();
+    if(!(api.aiBase || api.aiKey || api.aiModel || api.amapKey)){
+      document.getElementById('apiHint').textContent = '还没填任何配置，没有可导出的内容。';
+      return;
+    }
+    copyText(JSON.stringify({
+      aiBase: api.aiBase, aiKey: api.aiKey, aiModel: api.aiModel, amapKey: api.amapKey
+    }), document.getElementById('apiExport'));
+    document.getElementById('apiHint').textContent = '配置已复制。到另一台设备的这里点「导入配置」粘进去就行。';
+  }
+
+  function importApi(){
+    var txt = window.prompt('把之前导出的配置粘进来：');
+    if(!txt) return;
+    var d;
+    try { d = JSON.parse(txt); } catch(e){
+      document.getElementById('apiHint').textContent = '这段内容不是有效的配置，粘贴时要整段带上花括号。';
+      return;
+    }
+    if(!d || typeof d !== 'object'){
+      document.getElementById('apiHint').textContent = '这段内容不是有效的配置。';
+      return;
+    }
+    Object.keys(api).forEach(function(k){
+      if(typeof d[k] === 'string') api[k] = d[k].trim();
+    });
+    saveApi();
+    fillForm();
+    onApiChanged();
+    document.getElementById('apiHint').textContent = '配置已导入并生效。';
   }
 
   function readForm(){
@@ -1145,21 +1253,259 @@ textarea::placeholder{color:var(--faint);opacity:.75}
   var mapApi = {enabled:false};
   var current = null;
 
-  function initAi(){
-    fetch('/ai-status').then(function(r){ return r.json(); }).then(function(d){
-      ai.enabled = !!(d && d.enabled);
-      if(ai.enabled && current && !current.o._aiTried && missingFields(current.o).length){
-        openDetail(current, cache.length || 1);
+  // ---- 页面内直连接口 ----
+  // 以前 AI 和高德只能写在 config.json 里，靠本地 Python 转发。
+  // 但两家接口都放行跨域（高德是 *，DeepSeek 回显任意 Origin），
+  // 所以也可以把 Key 存在浏览器本地、由页面直接调，不需要后台。
+  // 优先级：页面里填过就用页面的，没填才回落到本地后台的 config.json。
+  var api = {aiBase:'', aiKey:'', aiModel:'', amapKey:''};
+  var API_STORE = 'tutor-api-v1';
+  var _geoCache = {};
+  var _routeCache = {};
+
+  function loadApi(){
+    try{
+      var s = JSON.parse(localStorage.getItem(API_STORE) || 'null');
+      if(s && typeof s === 'object'){
+        Object.keys(api).forEach(function(k){
+          if(typeof s[k] === 'string') api[k] = s[k].trim();
+        });
       }
+    }catch(e){}
+  }
+
+  function saveApi(){
+    try{ localStorage.setItem(API_STORE, JSON.stringify(api)); }catch(e){}
+  }
+
+  function aiDirect(){ return !!(api.aiBase && api.aiKey && api.aiModel); }
+  function mapDirect(){ return !!api.amapKey; }
+
+  var AI_PROMPT = [
+    '你是家教需求解析器。从用户给出的一条微信群消息里提取家教需求，只输出 JSON。',
+    '',
+    '字段说明：',
+    '- grade: 年级，如 "初二"、"高一"、"小学三年级"。没提到填 null',
+    '- subjects: 科目数组，如 ["数学"]。没提到填 []',
+    '- freq: 每周次数，数字。没提到填 null',
+    '- duration: 每次课的小时数，数字。没提到填 null',
+    '- rate: 每小时课时费，数字。如果只给了单次总价，用总价除以时长换算。都没提到填 null',
+    '- isOnline: 是否线上课，布尔值',
+    '- location: 地点，如 "海淀"、"地铁4号线人民大学站"、"线上"。没提到填 null',
+    '- days: 星期数组，0 是周日，1 到 6 是周一到周六。"周末" 填 [6, 0]。没提到填 []',
+    '- timeOfDay: "上午" 或 "下午" 或 "晚上"，没有填 null',
+    '- teacherGender: 要求老师的性别，"男" 或 "女"，没有填 null',
+    '- settle: 结算方式，如 "月结"，没有填 null',
+    '- extra: 其他值得注意的信息，比如家长的要求、孩子的情况、语气里的暗示，不超过 40 字，没有填 null',
+    '',
+    '注意：推断要克制，消息里没说的就不要编。只输出 JSON，不要任何解释文字。'
+  ].join('\n');
+
+  function extractJson(s){
+    if(!s) throw new Error('模型返回空内容');
+    s = String(s).trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+    var m = s.match(/\{[\s\S]*\}/);
+    if(m) s = m[0];
+    return JSON.parse(s);
+  }
+
+  function aiHttpHint(status){
+    if(status === 401) return 'API Key 无效，或没填对（401）';
+    if(status === 402 || status === 403) return 'Key 没权限或余额不足（' + status + '）';
+    if(status === 404) return '接口地址不对（404），检查结尾是不是漏了 /v1';
+    if(status === 429) return '调用太频繁或额度用完了（429）';
+    return '接口返回 HTTP ' + status;
+  }
+
+  function callAiDirect(text){
+    var url = api.aiBase.replace(/\/+$/, '') + '/chat/completions';
+    var body = {
+      model: api.aiModel,
+      messages: [
+        {role:'system', content: AI_PROMPT},
+        {role:'user', content: String(text || '').slice(0, 3000)}
+      ],
+      temperature: 0,
+      max_tokens: 600
+    };
+    function send(payload){
+      return fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json', 'Authorization':'Bearer ' + api.aiKey},
+        body: JSON.stringify(payload)
+      }).then(function(r){
+        if(!r.ok) throw new Error(aiHttpHint(r.status));
+        return r.json();
+      });
+    }
+    var strict = JSON.parse(JSON.stringify(body));
+    strict.response_format = {type:'json_object'};
+    // 有的兼容接口不认 response_format，失败就退回普通模式
+    return send(strict).catch(function(){ return send(body); }).then(function(d){
+      var msg = d && d.choices && d.choices[0] && d.choices[0].message;
+      return {ok:true, data: extractJson(msg && msg.content)};
+    }).catch(function(err){
+      return {ok:false, error: String((err && err.message) || err).slice(0, 200)};
+    });
+  }
+
+  function amapGet(path, params){
+    var q = [];
+    Object.keys(params).forEach(function(k){
+      var v = params[k];
+      if(v !== null && v !== undefined && v !== '') q.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
+    });
+    q.push('key=' + encodeURIComponent(api.amapKey));
+    q.push('output=JSON');
+    return fetch('https://restapi.amap.com' + path + '?' + q.join('&'))
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        // 高德失败时 HTTP 仍是 200，只能靠 status 判断
+        if(String(d.status) !== '1'){
+          var err = new Error(d.info || '高德返回失败');
+          err.amap = true;
+          err.code = String(d.infocode || '');
+          throw err;
+        }
+        return d;
+      });
+  }
+
+  // 这些错误码是 Key 本身的问题，不是「地名查不到」，必须原样报给用户
+  var AMAP_KEY_ERRORS = {'10001':1, '10002':1, '10003':1, '10004':1, '10005':1, '10006':1, '10007':1, '10009':1, '10044':1};
+
+  function isAmapKeyError(e){
+    return !!(e && e.amap && AMAP_KEY_ERRORS[e.code]);
+  }
+
+  function amapLookup(text, city){
+    text = String(text || '').trim();
+    if(!text) return Promise.resolve(null);
+    var ck = text + '|' + (city || '');
+    if(_geoCache.hasOwnProperty(ck)) return Promise.resolve(_geoCache[ck]);
+
+    var poiParams = {keywords: text, offset: 1, page: 1};
+    if(city){ poiParams.city = city; poiParams.citylimit = 'true'; }
+
+    return amapGet('/v3/place/text', poiParams).then(function(d){
+      var p = (d.pois || [])[0];
+      if(p && p.location){
+        return {location:p.location, city:p.cityname || city || '', name:p.name || text};
+      }
+      return null;
+    }).catch(function(e){ if(isAmapKeyError(e)) throw e; return null; }).then(function(found){
+      if(found) return found;
+      var geoParams = {address: text};
+      if(city) geoParams.city = city;
+      return amapGet('/v3/geocode/geo', geoParams).then(function(d){
+        var g = (d.geocodes || [])[0];
+        if(g && g.location){
+          return {location:g.location, city:g.city || city || '', name:g.formatted_address || text};
+        }
+        return null;
+      }).catch(function(e){ if(isAmapKeyError(e)) throw e; return null; });
+    }).then(function(res){
+      _geoCache[ck] = res;
+      return res;
+    });
+  }
+
+  function amapMinutes(sec){
+    var m = Math.round((parseFloat(sec) || 0) / 60);
+    return m > 0 ? m : 0;
+  }
+
+  function amapRoute(originLoc, destLoc, city){
+    var base = {origin: originLoc, destination: destLoc};
+    function fromPaths(d){
+      var p = ((d.route || {}).paths || [])[0];
+      if(!p) return null;
+      var m = amapMinutes(p.duration);
+      return m ? {minutes:m, mode:null, meters: Math.round(parseFloat(p.distance) || 0)} : null;
+    }
+
+    // 公交优先：家教单同城短途居多，地铁公交是最常见的通勤方式
+    var transit = {origin: originLoc, destination: destLoc, strategy: 0, nightflag: 0};
+    if(city) transit.city = city;
+
+    return amapGet('/v3/direction/transit/integrated', transit).then(function(d){
+      var route = d.route || {};
+      var t = (route.transits || [])[0];
+      var m = t ? amapMinutes(t.duration) : 0;
+      if(m) return {minutes:m, mode:'公交', meters: Math.round(parseFloat(route.distance) || 0)};
+      return null;
+    }).catch(function(){ return null; }).then(function(found){
+      if(found) return found;
+      return amapGet('/v3/direction/walking', base).then(fromPaths).catch(function(){ return null; })
+        .then(function(f){ if(f){ f.mode = '步行'; return f; } return null; });
+    }).then(function(found){
+      if(found) return found;
+      return amapGet('/v3/direction/driving', base).then(fromPaths).catch(function(){ return null; })
+        .then(function(f){ if(f){ f.mode = '驾车'; return f; } return null; });
+    });
+  }
+
+  function amapCommute(fromText, toText){
+    fromText = String(fromText || '').trim();
+    toText = String(toText || '').trim();
+    if(!fromText) return Promise.resolve({ok:false, error:'没有填出发点'});
+    if(!toText) return Promise.resolve({ok:false, error:'单子里没写地点'});
+
+    var ck = fromText + '|' + toText;
+    if(_routeCache.hasOwnProperty(ck)) return Promise.resolve(_routeCache[ck]);
+
+    return amapLookup(fromText, '').then(function(origin){
+      if(!origin) return {ok:false, error:'找不到出发点「' + fromText.slice(0, 24) + '」'};
+      var scope = origin.city || '';
+      return amapLookup(toText, scope).then(function(dest){
+        if(!dest) return {ok:false, error:'找不到地点「' + toText.slice(0, 24) + '」'};
+        return amapRoute(origin.location, dest.location, scope).then(function(found){
+          if(!found) return {ok:false, error:'没查到通勤方案'};
+          return {ok:true, data:{
+            minutes: found.minutes,
+            mode: found.mode,
+            meters: found.meters,
+            originName: origin.name || fromText,
+            destName: dest.name || toText
+          }};
+        });
+      });
+    }).catch(function(err){
+      if(isAmapKeyError(err)){
+        return {ok:false, error:'高德 Key 无效或类型不对（' + (err.message || err.code) + '），确认申请的是「Web 服务」类型的 Key'};
+      }
+      return {ok:false, error:'高德请求失败：' + String((err && err.message) || err).slice(0, 160)};
+    }).then(function(res){
+      _routeCache[ck] = res;
+      return res;
+    });
+  }
+
+  function applyAiStatus(on){
+    ai.enabled = !!on;
+    if(ai.enabled && current && !current.o._aiTried && missingFields(current.o).length){
+      openDetail(current, cache.length || 1);
+    }
+  }
+
+  function initAi(){
+    if(aiDirect()){ applyAiStatus(true); return; }
+    fetch('/ai-status').then(function(r){ return r.json(); }).then(function(d){
+      applyAiStatus(d && d.enabled);
     }).catch(function(){});
   }
 
+  function applyMapStatus(on){
+    mapApi.enabled = !!on;
+    if(mapApi.enabled && current && needMap(current.o)){
+      openDetail(current, cache.length || 1);
+    }
+  }
+
   function initMap(){
+    if(mapDirect()){ applyMapStatus(true); return; }
     fetch('/map-status').then(function(r){ return r.json(); }).then(function(d){
-      mapApi.enabled = !!(d && d.enabled);
-      if(mapApi.enabled && current && needMap(current.o)){
-        openDetail(current, cache.length || 1);
-      }
+      applyMapStatus(d && d.enabled);
     }).catch(function(){});
   }
 
@@ -1214,11 +1560,14 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     if(o._aiTried) return;
     o._aiTried = true;
     o._aiState = 'loading';
-    fetch('/parse', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({text: o.raw})
-    }).then(function(r){ return r.json(); }).then(function(res){
+    var req = aiDirect()
+      ? callAiDirect(o.raw)
+      : fetch('/parse', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({text: o.raw})
+        }).then(function(r){ return r.json(); });
+    req.then(function(res){
       if(!res || !res.ok){
         o._aiState = 'fail';
         renderDetail(o, item.c, me, item.mt, total, aiArg(o), o._mapNote);
@@ -1246,11 +1595,14 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     o._mapTried = true;
     o._mapNote = {state:'loading'};
     renderDetail(o, item.c, me, item.mt, total, aiArg(o), o._mapNote);
-    fetch('/commute', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({from: me.origin, to: o.location})
-    }).then(function(r){ return r.json(); }).then(function(res){
+    var req = mapDirect()
+      ? amapCommute(me.origin, o.location)
+      : fetch('/commute', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({from: me.origin, to: o.location})
+        }).then(function(r){ return r.json(); });
+    req.then(function(res){
       if(!res || !res.ok){
         o._mapNote = {state:'fail', text:'地图没查到路线（' + ((res && res.error) || '未知原因') + '），距离按你手填的区域时间算'};
         renderDetail(o, item.c, me, item.mt, total, aiArg(o), o._mapNote);
@@ -1269,7 +1621,9 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       item.mt = mt;
       renderDetail(o, c, me, mt, total, aiArg(o), o._mapNote);
     }).catch(function(){
-      o._mapNote = {state:'fail', text:'连不上本地服务，距离按你手填的区域时间算'};
+      o._mapNote = {state:'fail', text: mapDirect()
+        ? '地图请求失败，距离按你手填的区域时间算'
+        : '连不上本地服务，距离按你手填的区域时间算'};
       renderDetail(o, item.c, me, item.mt, total, aiArg(o), o._mapNote);
     });
   }
@@ -1382,6 +1736,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
   }
 
   function init(){
+    loadApi();
     restore();
 
     buildTogs(document.getElementById('tSubjects'), SUBJECTS, 'subjects', true);
@@ -1429,6 +1784,11 @@ textarea::placeholder{color:var(--faint);opacity:.75}
 
     ['fOrigin','fAreas','fMaxCommute','fFare','fMinRate','fIdealRate','fMaxHours','fUsedHours','fExclude','fCount','fCard']
       .forEach(function(id){ document.getElementById(id).addEventListener('input', readForm); });
+
+    ['fAiBase','fAiKey','fAiModel','fAmapKey']
+      .forEach(function(id){ document.getElementById(id).addEventListener('input', onApiChanged); });
+    document.getElementById('apiExport').addEventListener('click', exportApi);
+    document.getElementById('apiImport').addEventListener('click', importApi);
 
     fillForm();
     renderSummary();
