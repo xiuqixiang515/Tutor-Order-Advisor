@@ -588,28 +588,57 @@ textarea::placeholder{color:var(--faint);opacity:.75}
   var ADDR_TAIL = /(半岛|花园|广场|小区|大厦|公寓|华庭|豪庭|雅苑|花苑|家园|新村|苑|园|府|城|湾|里|村|镇|路|街|道|巷|号|附近|地铁站|中心)/;
   // 反面词：群里带序号的行里混着地址和要求，靠这些把要求那几行排掉。
   // 「学校」「中心」看着像地名，但「学校在职or专职老师」这种也会命中，所以只留较硬的词。
-  var NOT_ADDR = /(老师|教员|经验|年级|科目|时薪|课酬|薪资|课时|次数|频率|性别|要求|情况|备注|学员|小时|分钟|每次|一次|每周)/;
+  // 「编号」「单号」必须排除——它们含「号」，会被 ADDR_TAIL 认成门牌地址，
+  // 而编号行通常排在地址前面，先到先得就把真正的地址挤掉了。
+  var NOT_ADDR = /(老师|教员|经验|年级|科目|时薪|课酬|薪资|课时|次数|频率|性别|要求|情况|备注|学员|小时|分钟|每次|一次|每周|编号|单号)/;
+
+  // 「XX附近小区」这种描述对地图没意义，去掉尾巴留「XX附近」更好搜
+  function cleanPlace(s){
+    return String(s || '')
+      .replace(/[#＃]/g, ' ')
+      .replace(/^[\s·、,，:：\-—]+/, '')
+      .replace(/[\s·、,，。;；\-—]+$/, '')
+      .replace(/附近(?:的)?(?:小区|楼盘|一带|区域|地方)$/, '附近')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
 
   // 单子里的地址写法太杂，按可信度从高到低取：
-  //   【地址】天河区华景新城 / 地址：xxx / 学员地址：花都镜湖附近 / 1、恒大御景半岛
+  //   1. 明确写了地址标签的：【地址】天河区华景新城、[地址]:天河区合生汇附近小区
+  //   2. 没有标签但内容像地名的：1、恒大御景半岛
+  // 标签行要单独处理：手里这单的 [时薪】:500/2h 如果走内容判断，
+  // 「时」不在尾缀表里但「号」在，很容易误伤。
   function extractPlace(t){
     var lines = String(t || '').split('\n');
-    var best = '';
+    var fallback = '';
     for(var i = 0; i < lines.length; i++){
       var ln = lines[i].trim();
       if(!ln) continue;
-      var m = ln.match(/^(?:【\s*(?:地址|地点|位置)\s*】|(?:学员|上课)?地址|上课地点|地点|位置)\s*[:：]?\s*(.+)$/);
-      var cand = m ? m[1] : ln.replace(/^\d+\s*[、.．)）]\s*/, '');
-      cand = cand.replace(/[#＃]/g, ' ').replace(/^[\s·、,，:：]+/, '').replace(/[\s·、,，。;；]+$/, '').trim();
+
+      // 行首标签。群里中英文方括号混着写太常见了：[地址】、【地址]:、[时薪]
+      var lb = ln.match(/^[\[【]\s*([^\]】]{1,8}?)\s*[\]】]\s*[:：]?\s*(.*)$/);
+      // 没有括号的裸标签：地址：xxx / 学员地址：xxx
+      var bare = !lb && ln.match(/^(学员地址|上课地址|上课地点|地址|地点|位置)\s*[:：]\s*(.+)$/);
+      var tag = lb ? lb[1] : (bare ? bare[1] : '');
+      var body = lb ? lb[2] : (bare ? bare[2] : ln.replace(/^\d+\s*[、.．)）]\s*/, ''));
+
+      if(tag){
+        // 只有明确说是地址的才采信，其余标签行（年级、时薪、老师要求）不可能是地址
+        if(/^(地址|地点|位置|上课地址|上课地点|学员地址)$/.test(tag)){
+          var hit = cleanPlace(body);
+          if(hit) return hit;
+        }
+        continue;
+      }
+
+      var cand = cleanPlace(body);
       if(cand.length < 2 || cand.length > 40) continue;
       if(NOT_ADDR.test(cand)) continue;
       if(!ADDR_TAIL.test(cand)) continue;
-      // 带「地址」标签的直接采信
-      if(m) return cand;
-      // 序号行没有标签，多半是一句话，限制长度避免把整行要求当地址
-      if(!best && cand.length <= 24) best = cand;
+      // 没有标签的行多半是一句话，限制长度避免把整行要求当地址
+      if(!fallback && cand.length <= 24) fallback = cand;
     }
-    return best;
+    return fallback;
   }
 
   function toNum(s){
@@ -700,8 +729,10 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     });
     o.subjects = subs;
 
-    if(/(女老师|女教师|女家教|要女|限女|女生优先|只招女)/.test(t)) o.teacherGender = '女';
-    else if(/(男老师|男教师|男家教|要男|限男|男生优先|只招男)/.test(t)) o.teacherGender = '男';
+    // 「女[的/大学生]…老师」这类中间夹了修饰词的写法也要认。
+    // 这单写的是「专职女的数学老师」，原来的 女老师/女教师 全对不上。
+    if(/(女老师|女教师|女家教|要女|限女|女生优先|只招女|女[^，。；\n]{0,6}老师)/.test(t)) o.teacherGender = '女';
+    else if(/(男老师|男教师|男家教|要男|限男|男生优先|只招男|男[^，。；\n]{0,6}老师)/.test(t)) o.teacherGender = '男';
 
     if(m = t.match(/每(?:周|星期)\s*([一二三四五六七两1-7])\s*次/)) o.freq = toNum(m[1]);
     else if(m = t.match(/(?:一周|一星期)\s*([一二三四五六七两1-7])\s*次/)) o.freq = toNum(m[1]);
@@ -958,8 +989,17 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     if(/竞赛/.test(o.raw) && !cfg.comp){
       reqList.push(0); reqNotes.push('要求竞赛经验，你没有');
     }
-    if(/(名校|985|211|研究生|博士)/.test(o.raw) && !cfg.elite){
-      reqList.push(0); reqNotes.push('要求名校或高学历，你不满足');
+    // 「92」是教培圈对 985/211 的统称（「学历 92 以上」），规则原来不认识，
+    // 这单要求 92 却被判成「没有额外限制」给满 100 分
+    if(/(名校|985|211|研究生|博士|92以上|92及以上|92大|双一流)/.test(o.raw) && !cfg.elite){
+      reqList.push(0); reqNotes.push('要求名校或高学历（含「92」这类说法），你不满足');
+    }
+    // 「专职」「在职老师」是另一档：这单 250 元/时是专职价，
+    // 在校生去接通常拿不到，也不该按这个价算净时薪。
+    // 用户是不是学生看自我介绍（me.card，默认「XX大学 · 数学系 · 大三」）
+    var isStudent = /(大学|学院|大[一二三四]|研[一二三]|博士|本科|在读)/.test(cfg.card || '');
+    if(/(专职|在职老师|学校在职|机构老师)/.test(o.raw) && isStudent){
+      reqList.push(20); reqNotes.push('要专职/在职老师，你是在校生，价位和身份都可能对不上');
     }
     if(cfg.exclude.length){
       cfg.exclude.forEach(function(k){
@@ -1068,6 +1108,9 @@ textarea::placeholder{color:var(--faint);opacity:.75}
 
     // 出行方式明细。只有高德查过才有线路，估的只能给个总量。
     var det = [];
+    // 把「高德把它认成了哪儿」写在最前面。地址识别偏了的话，
+    // 后面的分钟数和净时薪全跟着错，用户得能一眼看出来。
+    if(src === 'map' && o._commuteDest) det.push('到 ' + o._commuteDest);
     if(o._commuteLines && o._commuteLines.length){
       det.push('坐 ' + o._commuteLines.join(' → '));
       if(o._commuteTransfers > 0) det.push('换乘 ' + o._commuteTransfers + ' 次');
@@ -1103,8 +1146,12 @@ textarea::placeholder{color:var(--faint);opacity:.75}
         h += '<div class="cm-note">单子里没认出地点，先按你设的上限 ' + Math.round(c.commuteMin)
            + ' 分钟兜底。可以在「设条件」里给这个片区补一条通勤时间</div>';
       }
-    } else if(src === 'map' && o._commuteDest){
-      h += '<div class="cm-note">目的地识别为「' + esc(o._commuteDest) + '」</div>';
+    } else if(src === 'map' && o._commuteWalk > 1500){
+      // 下车还要走 1.5 公里以上，基本是地址写得太虚、高德把终点定偏了。
+      // 这种数不能当成可靠通勤时间，得提醒一句。
+      h += '<div class="cm-note">下车还要走 ' + (o._commuteWalk / 1000).toFixed(1) + ' 公里，'
+         + '多半是地址写得太模糊（「' + esc(o.location || '') + '」），高德把终点定偏了。'
+         + '问清楚具体小区再算一次，这个分钟数才靠得住</div>';
     }
 
     h += '</div>';
