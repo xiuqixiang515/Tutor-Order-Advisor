@@ -528,8 +528,12 @@ textarea::placeholder{color:var(--faint);opacity:.75}
         </div>
         <div class="h">自动：规则能切开就不麻烦 AI，切不动才问它。总是用 AI：每次都问，慢一两秒但更准。两种都不会改动原文一个字。</div>
       </div>
-      <div class="fld"><div class="h" style="margin-top:0">填在这里就由浏览器直接调接口，不用启动后台，手机上也一样。四项都留空则用本地 <code>config.json</code>（需要后台开着）。</div></div>
-      <div class="fld" style="margin-top:2px"><div class="h" style="margin-top:8px">上面四项填完就已经生效并存好了，<strong>不用点下面这两个按钮</strong>。它们只在换设备搬配置时用。</div></div>
+      <div class="fld" style="margin-top:14px"><div class="h" style="margin-top:0">填在这里就由浏览器直接调接口，不用启动后台，手机上也一样。四项都留空则用本地 <code>config.json</code>（需要后台开着）。</div></div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="btn-ghost" id="apiTest" type="button">测试连接</button>
+      </div>
+      <div class="fld"><div class="h" style="margin-top:4px">填完不确定通不通，点上面这个按钮发一次真实的请求试试。只花几个 token。</div></div>
+      <div class="fld" style="margin-top:2px"><div class="h" style="margin-top:8px">下面两个按钮只在换设备搬配置时用，填完就已经生效了，<strong>不用点</strong>。</div></div>
       <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
         <button class="btn-ghost" id="apiExport" type="button">复制配置</button>
         <button class="btn-ghost" id="apiImport" type="button">粘贴配置</button>
@@ -1382,7 +1386,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     if(!api.aiBase) miss.push('接口地址');
     if(!api.aiKey) miss.push('API Key');
     if(!api.aiModel) miss.push('模型名');
-    if(!aiDirect() && (api.aiBase || api.aiKey || api.aiModel)){
+    if(!aiDirect() && (api.aiBase || api.aiKey)){
       el.textContent = 'AI 还差「' + miss.join('、') + '」没填，三项都填了才会生效。';
       return;
     }
@@ -1424,6 +1428,44 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       initMap();
       if(current) openDetail(current, cache.length || 1);
     }, 600);
+  }
+
+  // 填完不知道通不通，就发一次真请求。比让用户去猜「为什么没反应」强。
+  function testApi(){
+    readApiForm();
+    var el = document.getElementById('apiHint');
+    var miss = [];
+    if(!api.aiBase) miss.push('接口地址');
+    if(!api.aiKey) miss.push('API Key');
+    if(!api.aiModel) miss.push('模型名');
+    if(miss.length){
+      el.textContent = '还差「' + miss.join('、') + '」没填，三项齐了才能测。';
+      return;
+    }
+
+    el.textContent = '正在连「' + api.aiModel + '」…';
+    var url = api.aiBase.replace(/\/+$/, '') + '/chat/completions';
+    fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', 'Authorization':'Bearer ' + api.aiKey},
+      body: JSON.stringify({
+        model: api.aiModel,
+        messages: [{role:'user', content:'ping'}],
+        max_tokens: 4
+      })
+    }).then(function(r){
+      if(r.ok){
+        el.textContent = '连上了，「' + api.aiModel + '」可以用。AI 补全和拆单都已生效。';
+        return;
+      }
+      return r.text().then(function(t){
+        var extra = '';
+        try{ extra = ((JSON.parse(t) || {}).error || {}).message || ''; }catch(e){}
+        el.textContent = '没连上：' + aiHttpHint(r.status) + (extra ? '。' + String(extra).slice(0, 80) : '');
+      });
+    }).catch(function(e){
+      el.textContent = '没连上：' + String((e && e.message) || e).slice(0, 100) + '（网络不通或跨域被拦）';
+    });
   }
 
   function exportApi(){
@@ -1579,7 +1621,9 @@ textarea::placeholder{color:var(--faint);opacity:.75}
   // 但两家接口都放行跨域（高德是 *，DeepSeek 回显任意 Origin），
   // 所以也可以把 Key 存在浏览器本地、由页面直接调，不需要后台。
   // 优先级：页面里填过就用页面的，没填才回落到本地后台的 config.json。
-  var api = {aiBase:'', aiKey:'', aiModel:'', amapKey:'', splitMode:'auto'};
+  // 模型名给个默认值。留空的话 aiDirect() 直接 false，一个请求都不会发，
+  // 而输入框里的灰色 deepseek-chat 看起来像已经填了，用户根本意识不到漏了。
+  var api = {aiBase:'', aiKey:'', aiModel:'deepseek-chat', amapKey:'', splitMode:'auto'};
   var API_STORE = 'tutor-api-v1';
   var _geoCache = {};
   var _routeCache = {};
@@ -1593,6 +1637,9 @@ textarea::placeholder{color:var(--faint);opacity:.75}
         });
       }
     }catch(e){}
+    // 老用户存的是空模型名，升级后会自动被空值覆盖掉默认值。
+    // 填的是 DeepSeek 地址却卡在「没填模型名」的话，替他补上。
+    if(!api.aiModel && /deepseek/i.test(api.aiBase)) api.aiModel = 'deepseek-chat';
   }
 
   function saveApi(){
@@ -2514,6 +2561,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
 
     ['fAiBase','fAiKey','fAiModel','fAmapKey']
       .forEach(function(id){ document.getElementById(id).addEventListener('input', onApiChanged); });
+    document.getElementById('apiTest').addEventListener('click', testApi);
     document.getElementById('apiExport').addEventListener('click', exportApi);
     document.getElementById('apiImport').addEventListener('click', importApi);
 
