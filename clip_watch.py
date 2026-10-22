@@ -190,8 +190,11 @@ def extract_json(s):
     return json.loads(s)
 
 
-def call_ai(text):
-    """返回 (dict, None) 或 (None, 错误信息)。"""
+def _ai_json(system_prompt, user_text, max_tokens):
+    """调一次模型，返回 (dict, None) 或 (None, 错误信息)。
+
+    补字段和拆单共用：都先带 response_format 走一遍，接口不认再退回普通模式。
+    """
     cfg = load_config()
     if not (cfg["base_url"] and cfg["api_key"] and cfg["model"]):
         return None, "没有配置 AI"
@@ -199,11 +202,11 @@ def call_ai(text):
     payload = {
         "model": cfg["model"],
         "messages": [
-            {"role": "system", "content": AI_PROMPT},
-            {"role": "user", "content": text[:3000]},
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_text},
         ],
         "temperature": 0,
-        "max_tokens": 600,
+        "max_tokens": max_tokens,
     }
     url = cfg["base_url"].rstrip("/") + "/chat/completions"
 
@@ -229,6 +232,67 @@ def call_ai(text):
         return extract_json(content), None
     except Exception as exc:
         return None, str(exc)[:220]
+
+
+def call_ai(text):
+    """返回 (dict, None) 或 (None, 错误信息)。"""
+    return _ai_json(AI_PROMPT, text[:3000], 600)
+
+
+# 拆单专用提示词。只让模型报「哪一行是开头」，不让它复述原文——
+# 抄几千字很容易漏字改标点，后面的字段解析就跟着错。
+SPLIT_PROMPT = """你要把一段家教群消息切成若干条彼此独立的单子。
+我会按行给你文本，每行前面有行号和一个制表符。你只需要判断「哪一行是一条新单子的第一行」。
+
+新单子的开头通常是这些形式：
+- 编号行：#1051、【编号】13205、编号：GZ6102226、【单号】
+- 机构代码：XMY-102201、ZX2130、DD2007
+- 城市加日期码：广州BY26102206、佛山26102202C、深圳线下26050501
+- 表情开头：🎃🎃佛山26102202C、🍀广州xxx
+- 中介单号：家教宝贝粥粥: gz10221626
+- 一排破折号或星号的分隔线，它下面第一行往往是新单子
+
+判断时注意：
+- 一条单子内部的多行（地址、年级、科目、时间、薪资、要求）都属于同一条，不要切开
+- 同一条单子被转发两次，只算一条，第二份不要单独成条
+- 如果某行确实像另一条单子的开始，就把它列进去
+- 只有一整条内容时，就只输出 [1]
+
+只输出 JSON：{"starts":[1,9,16]}
+数字是行号，从 1 开始，必须递增，第一项必须是 1。不要输出别的任何字。"""
+
+SPLIT_MAX_LINES = 600
+
+
+def ai_split(text):
+    """让模型判断每条单子从第几行开始，返回 (行号列表, None) 或 (None, 错误)。
+
+    只报行号，原文由调用方自己切，保证切出来的内容和用户粘的一字不差。
+    """
+    lines = (text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    if len(lines) > SPLIT_MAX_LINES:
+        return None, "文本超过 %d 行，先按规则切" % SPLIT_MAX_LINES
+    numbered = "\n".join("%d\t%s" % (i + 1, l) for i, l in enumerate(lines))
+
+    data, err = _ai_json(SPLIT_PROMPT, numbered, 900)
+    if data is None:
+        return None, err
+    starts = data.get("starts")
+    if not isinstance(starts, list) or not starts:
+        return None, "AI 没按格式返回 starts"
+
+    out = []
+    for v in starts:
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            return None, "AI 返回的行号不是数字"
+        # 有一个越界就整体作废。只丢掉越界那个的话，末尾几条会被并进
+        # 前一条，结果是悄悄少了几单，比直接不用 AI 还糟。
+        if not (1 <= n <= len(lines)):
+            return None, "AI 给的行号超出了文本范围"
+        out.append(n)
+    return out, None
 
 
 # ---------------- 通勤时间（高德地图，可选） ----------------
@@ -563,6 +627,22 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": err})
             else:
                 self._json({"ok": True, "data": data})
+            return
+
+        if path == "/split":
+            body = self._read_json()
+            if body is None:
+                self._json({"ok": False, "error": "json"}, 400)
+                return
+            text = body.get("text") or ""
+            if not text.strip():
+                self._json({"ok": False, "error": "empty"}, 400)
+                return
+            starts, err = ai_split(text)
+            if starts is None:
+                self._json({"ok": False, "error": err})
+            else:
+                self._json({"ok": True, "starts": starts})
             return
 
         if path == "/commute":

@@ -508,6 +508,14 @@ textarea::placeholder{color:var(--faint);opacity:.75}
           <input type="password" id="fAmapKey" placeholder="不填就不用地图">
         </div>
       </div>
+      <div class="fld" style="margin-top:10px">
+        <label>拆单方式</label>
+        <div class="togs" id="tSplit">
+          <span class="tog on" data-v="auto">自动</span>
+          <span class="tog" data-v="always">总是用 AI</span>
+        </div>
+        <div class="h">自动：规则能切开就不麻烦 AI，切不动才问它。总是用 AI：每次都问，慢一两秒但更准。两种都不会改动原文一个字。</div>
+      </div>
       <div class="fld"><div class="h" style="margin-top:0">填在这里就由浏览器直接调接口，不用启动后台，手机上也一样。四项都留空则用本地 <code>config.json</code>（需要后台开着）。</div></div>
       <div class="fld" style="margin-top:2px"><div class="h" style="margin-top:8px">上面四项填完就已经生效并存好了，<strong>不用点下面这两个按钮</strong>。它们只在换设备搬配置时用。</div></div>
       <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
@@ -1298,7 +1306,17 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     document.getElementById('fAiKey').value = api.aiKey;
     document.getElementById('fAiModel').value = api.aiModel;
     document.getElementById('fAmapKey').value = api.amapKey;
+    renderSplitMode();
     renderApiHint();
+  }
+
+  function renderSplitMode(){
+    var box = document.getElementById('tSplit');
+    if(!box) return;
+    var cur = api.splitMode || 'auto';
+    Array.prototype.forEach.call(box.children, function(c){
+      c.classList.toggle('on', c.getAttribute('data-v') === cur);
+    });
   }
 
   function renderApiHint(){
@@ -1350,7 +1368,8 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       return;
     }
     copyText(JSON.stringify({
-      aiBase: api.aiBase, aiKey: api.aiKey, aiModel: api.aiModel, amapKey: api.amapKey
+      aiBase: api.aiBase, aiKey: api.aiKey, aiModel: api.aiModel, amapKey: api.amapKey,
+      splitMode: api.splitMode || 'auto'
     }), document.getElementById('apiExport'));
     document.getElementById('apiHint').textContent = '配置已复制到剪贴板。换设备时在那台点「粘贴配置」，把这段粘进去就行。';
   }
@@ -1418,22 +1437,43 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     if(!Array.isArray(me.exclude)) me.exclude = String(me.exclude || '').split(/[,，]/).filter(Boolean);
   }
 
-  function run(){
-    var raw = document.getElementById('input').value.trim();
-    if(!raw) return;
-    readForm();
+  // 每次分析都递增，用来丢弃过期的 AI 拆单结果
+  // （用户连粘两条时，第一条的 AI 回复不能盖掉第二条）
+  var splitSeq = 0;
 
-    var lines = splitOrders(raw);
-    if(!lines.length) return;
-
+  function analyzeLines(lines){
     cache = lines.map(function(line){
       var o = parseOrder(line);
       var c = computeCost(o, me);
       return {o:o, c:c, mt:computeMatch(o, c, me)};
     }).sort(function(a,b){ return b.mt.total - a.mt.total; });
-
+    current = null;
     if(cache.length === 1) openDetail(cache[0], 1);
     else renderList();
+  }
+
+  function run(){
+    var raw = document.getElementById('input').value.trim();
+    if(!raw) return;
+    readForm();
+
+    var byRule = splitOrders(raw);
+    if(!byRule.length) return;
+
+    var seq = ++splitSeq;
+    analyzeLines(byRule);
+
+    // 规则已经给出结果了，能看就先看。只有规则明显没切开时才去问 AI，
+    // 问了也是回来校正，不阻塞在上面干等。
+    if(!shouldAskSplit(raw, byRule)) return;
+    aiSplit(raw).then(function(res){
+      if(!res.ok || seq !== splitSeq) return;
+      var byAi = cutByStarts(raw, res.starts);
+      if(!aiSplitTrusted(byAi, byRule, raw)) return;
+      if(sameSplit(byAi, byRule)) return;
+      analyzeLines(byAi);
+      toast('AI 把这段拆成了 ' + byAi.length + ' 条');
+    }).catch(function(){});
   }
 
   var SAMPLES = [
@@ -1453,7 +1493,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
   // 但两家接口都放行跨域（高德是 *，DeepSeek 回显任意 Origin），
   // 所以也可以把 Key 存在浏览器本地、由页面直接调，不需要后台。
   // 优先级：页面里填过就用页面的，没填才回落到本地后台的 config.json。
-  var api = {aiBase:'', aiKey:'', aiModel:'', amapKey:''};
+  var api = {aiBase:'', aiKey:'', aiModel:'', amapKey:'', splitMode:'auto'};
   var API_STORE = 'tutor-api-v1';
   var _geoCache = {};
   var _routeCache = {};
@@ -1496,6 +1536,31 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     '注意：推断要克制，消息里没说的就不要编。只输出 JSON，不要任何解释文字。'
   ].join('\n');
 
+  // 拆单专用的提示词。关键点：不让模型复述原文，只让它报「哪一行是开头」。
+  // 让它抄一遍 5000 字，漏一个字、改一个标点，后面 parseOrder 就跟着错；
+  // 报行号则原文完全不动，切出来的东西和用户粘的一模一样。
+  var SPLIT_PROMPT = [
+    '你要把一段家教群消息切成若干条彼此独立的单子。',
+    '我会按行给你文本，每行前面有行号和一个制表符。你只需要判断「哪一行是一条新单子的第一行」。',
+    '',
+    '新单子的开头通常是这些形式：',
+    '- 编号行：#1051、【编号】13205、编号：GZ6102226、【单号】',
+    '- 机构代码：XMY-102201、ZX2130、DD2007',
+    '- 城市加日期码：广州BY26102206、佛山26102202C、深圳线下26050501',
+    '- 表情开头：🎃🎃佛山26102202C、🍀广州xxx',
+    '- 中介单号：家教宝贝粥粥: gz10221626',
+    '- 一排破折号或星号的分隔线，它下面第一行往往是新单子',
+    '',
+    '判断时注意：',
+    '- 一条单子内部的多行（地址、年级、科目、时间、薪资、要求）都属于同一条，不要切开',
+    '- 同一条单子被转发两次，只算一条，第二份不要单独成条',
+    '- 如果某行确实像另一条单子的开始，就把它列进去',
+    '- 只有一整条内容时，就只输出 [1]',
+    '',
+    '只输出 JSON：{"starts":[1,9,16]}',
+    '数字是行号，从 1 开始，必须递增，第一项必须是 1。不要输出别的任何字。'
+  ].join('\n');
+
   function extractJson(s){
     if(!s) throw new Error('模型返回空内容');
     s = String(s).trim().replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
@@ -1512,16 +1577,18 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     return '接口返回 HTTP ' + status;
   }
 
-  function callAiDirect(text){
+  // 所有 AI 调用都走这里。补字段和拆单共用一套请求与降级逻辑：
+  // 先带 response_format=json_object，有的兼容接口不认就退回普通模式。
+  function aiJsonCall(systemPrompt, userText, maxTokens){
     var url = api.aiBase.replace(/\/+$/, '') + '/chat/completions';
     var body = {
       model: api.aiModel,
       messages: [
-        {role:'system', content: AI_PROMPT},
-        {role:'user', content: String(text || '').slice(0, 3000)}
+        {role:'system', content: systemPrompt},
+        {role:'user', content: String(userText || '')}
       ],
       temperature: 0,
-      max_tokens: 600
+      max_tokens: maxTokens || 600
     };
     function send(payload){
       return fetch(url, {
@@ -1535,13 +1602,16 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     }
     var strict = JSON.parse(JSON.stringify(body));
     strict.response_format = {type:'json_object'};
-    // 有的兼容接口不认 response_format，失败就退回普通模式
     return send(strict).catch(function(){ return send(body); }).then(function(d){
       var msg = d && d.choices && d.choices[0] && d.choices[0].message;
       return {ok:true, data: extractJson(msg && msg.content)};
     }).catch(function(err){
       return {ok:false, error: String((err && err.message) || err).slice(0, 200)};
     });
+  }
+
+  function callAiDirect(text){
+    return aiJsonCall(AI_PROMPT, String(text || '').slice(0, 3000), 600);
   }
 
   function amapGet(path, params){
@@ -1958,6 +2028,95 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     return out;
   }
 
+  // ---- 让 AI 参与拆单 ----
+  // 规则是靠记得住的那几种起头格式断句的，遇到没见过的写法就切不开。
+  // AI 不需要记住模式，所以能兜住。但它有两个毛病要防：
+  // 一是慢（两三秒），二是爱自由发挥（复述原文时容易漏字改标点）。
+  // 所以只让它报行号，原文由 cutByStarts 从用户的文本里切，一个字都不会变。
+  var SPLIT_MAX_LINES = 600;
+
+  function aiSplitDirect(raw){
+    var lines = String(raw || '').replace(/\r\n?/g, '\n').split('\n');
+    if(lines.length > SPLIT_MAX_LINES){
+      return Promise.resolve({ok:false, error:'文本超过 ' + SPLIT_MAX_LINES + ' 行，先按规则切'});
+    }
+    var numbered = lines.map(function(l, i){ return (i + 1) + '\t' + l; }).join('\n');
+    return aiJsonCall(SPLIT_PROMPT, numbered, 900).then(function(res){
+      if(!res.ok) return res;
+      var starts = res.data && res.data.starts;
+      if(!Array.isArray(starts) || !starts.length) return {ok:false, error:'AI 没按格式返回 starts'};
+      var nums = starts.map(function(v){ return parseInt(v, 10); });
+      // 有一个越界就整体作废。只丢掉越界那个的话，末尾几条会被并进前一条，
+      // 结果是悄悄少了几单，比直接不用 AI 还糟。
+      var bad = nums.some(function(v){ return !(v >= 1 && v <= lines.length); });
+      if(bad) return {ok:false, error:'AI 给的行号超出了文本范围'};
+      return {ok:true, starts:nums};
+    });
+  }
+
+  // 页面里没填 Key 但本地后台配了 AI 的，走后台 /split，两边行为一样
+  function aiSplit(raw){
+    if(aiDirect()) return aiSplitDirect(raw);
+    return fetch('/split', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({text: String(raw || '')})
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if(!d || !d.ok) return {ok:false, error:(d && d.error) || '后台拆单失败'};
+      return {ok:true, starts: d.starts || []};
+    }).catch(function(){ return {ok:false, error:'连不上本地服务'}; });
+  }
+
+  // 按行号从原文里切。行号乱序、重复、第一项不是 1 都在这里兜住。
+  function cutByStarts(raw, starts){
+    var lines = String(raw || '').replace(/\r\n?/g, '\n').split('\n');
+    var idx = [];
+    (starts || []).forEach(function(n){
+      var i = parseInt(n, 10) - 1;
+      if(i >= 0 && i < lines.length && idx.indexOf(i) < 0) idx.push(i);
+    });
+    idx.sort(function(a, b){ return a - b; });
+    if(!idx.length) return [];
+    if(idx[0] !== 0) idx.unshift(0);
+
+    var out = [];
+    for(var k = 0; k < idx.length; k++){
+      var seg = lines.slice(idx[k], k + 1 < idx.length ? idx[k + 1] : lines.length).join('\n').trim();
+      if(seg) out.push(seg);
+    }
+    return out;
+  }
+
+  // 切法一样就不折腾界面。只比首行和长度，够判断了。
+  function sameSplit(a, b){
+    if(a.length !== b.length) return false;
+    for(var i = 0; i < a.length; i++){
+      if(a[i].replace(/\s+/g, '') !== b[i].replace(/\s+/g, '')) return false;
+    }
+    return true;
+  }
+
+  // 什么时候值得为拆单多花一次 AI 调用？
+  // 规则切出好几条，说明它认得这些格式，没必要再问；
+  // 只切出一条但文本很长，多半是把一整批发群消息合并了，这才是要救的。
+  function shouldAskSplit(raw, got){
+    if(!ai.enabled) return false;
+    if(api.splitMode === 'always') return true;
+    if(got.length >= 2) return false;
+    return String(raw).length > 260;
+  }
+
+  // AI 的结果值不值得拿来覆盖规则的结果。两个明显的坏情况：
+  // 规则清清楚楚切出了好几条，AI 却说只有一两条 —— 多半是它偷懒；
+  // 每条单子至少占两行，AI 切出的条数接近行数 —— 说明它把单子拆碎了。
+  function aiSplitTrusted(byAi, byRule, raw){
+    if(!byAi.length) return false;
+    if(byAi.length * 2 < byRule.length) return false;
+    var lineCount = String(raw).split('\n').length;
+    if(byAi.length > Math.max(2, lineCount * 0.6)) return false;
+    return true;
+  }
+
   var toastTimer = null;
   function toast(msg){
     var el = document.getElementById('toast');
@@ -2099,6 +2258,15 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       .forEach(function(id){ document.getElementById(id).addEventListener('input', onApiChanged); });
     document.getElementById('apiExport').addEventListener('click', exportApi);
     document.getElementById('apiImport').addEventListener('click', importApi);
+
+    // 拆单方式只是下一次分析才用得上，不用清缓存重算，所以不走 onApiChanged
+    Array.prototype.forEach.call(document.getElementById('tSplit').children, function(c){
+      c.addEventListener('click', function(){
+        api.splitMode = c.getAttribute('data-v') || 'auto';
+        saveApi();
+        renderSplitMode();
+      });
+    });
 
     fillForm();
     renderSummary();
