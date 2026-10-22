@@ -485,9 +485,10 @@ textarea::placeholder{color:var(--faint);opacity:.75}
         </div>
       </div>
       <div class="fld"><div class="h" style="margin-top:0">填在这里就由浏览器直接调接口，不用启动后台，手机上也一样。四项都留空则用本地 <code>config.json</code>（需要后台开着）。</div></div>
-      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-        <button class="btn-ghost" id="apiExport" type="button">导出配置</button>
-        <button class="btn-ghost" id="apiImport" type="button">导入配置</button>
+      <div class="fld" style="margin-top:2px"><div class="h" style="margin-top:8px">上面四项填完就已经生效并存好了，<strong>不用点下面这两个按钮</strong>。它们只在换设备搬配置时用。</div></div>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn-ghost" id="apiExport" type="button">复制配置</button>
+        <button class="btn-ghost" id="apiImport" type="button">粘贴配置</button>
       </div>
       <div class="fld"><div class="h" id="apiHint">Key 只存在这台设备的浏览器里，不会上传到任何服务器。</div></div>
     </div>
@@ -1151,17 +1152,17 @@ textarea::placeholder{color:var(--faint);opacity:.75}
   function exportApi(){
     readApiForm();
     if(!(api.aiBase || api.aiKey || api.aiModel || api.amapKey)){
-      document.getElementById('apiHint').textContent = '还没填任何配置，没有可导出的内容。';
+      document.getElementById('apiHint').textContent = '还没填任何配置，没有可复制的内容。';
       return;
     }
     copyText(JSON.stringify({
       aiBase: api.aiBase, aiKey: api.aiKey, aiModel: api.aiModel, amapKey: api.amapKey
     }), document.getElementById('apiExport'));
-    document.getElementById('apiHint').textContent = '配置已复制。到另一台设备的这里点「导入配置」粘进去就行。';
+    document.getElementById('apiHint').textContent = '配置已复制到剪贴板。换设备时在那台点「粘贴配置」，把这段粘进去就行。';
   }
 
   function importApi(){
-    var txt = window.prompt('把之前导出的配置粘进来：');
+    var txt = window.prompt('把之前「复制配置」得到的那段内容粘在这里：');
     if(!txt) return;
     var d;
     try { d = JSON.parse(txt); } catch(e){
@@ -1178,7 +1179,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     saveApi();
     fillForm();
     onApiChanged();
-    document.getElementById('apiHint').textContent = '配置已导入并生效。';
+    document.getElementById('apiHint').textContent = '配置已粘贴，AI 和高德都已生效。';
   }
 
   function readForm(){

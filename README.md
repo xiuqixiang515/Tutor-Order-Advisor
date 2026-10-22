@@ -187,9 +187,9 @@ https://xiuqixiang515.github.io/Tutor-Order-Advisor/
 | AI API Key | 你申请的 `sk-` 开头的 Key |
 | 模型名 | `deepseek-chat` |
 
-填完收起面板就生效。Key 存在浏览器的 localStorage 里，**不会上传到任何服务器**，也不需要启动后台——手机上打开同一个页面填一遍，AI 照样能用。
+填完收起面板就生效，**不用再点别的按钮**。Key 存在浏览器的 localStorage 里，不会上传到任何服务器，也不需要启动后台——手机上打开同一个页面填一遍，AI 照样能用。
 
-换设备时不用重填：点「导出配置」复制那段文本，到新设备点「导入配置」粘进去。
+换设备时不用重填：点「**复制配置**」，到新设备点「**粘贴配置**」把那段贴进去。
 
 ![接口配置](docs/screenshots/api-config.png)
 
@@ -268,7 +268,7 @@ https://xiuqixiang515.github.io/Tutor-Order-Advisor/
 | 配了 AI | 仅在关键字段缺失时，把**这一条单子的原文**发给厂商 API |
 | 配了高德 | 把**你的出发点和单子里的地点**发给高德，用于地理编码和路径规划 |
 | 你的条件画像 | 存在浏览器 `localStorage`，不上传任何地方 |
-| 页面里填的 Key | 同样只在 `localStorage`，不出这台设备。换设备要手动导出导入 |
+| 页面里填的 Key | 同样只在 `localStorage`，不出这台设备。换设备要手动复制粘贴 |
 | `config.json` | 只在本地读，已在 `.gitignore` 里，不会被提交 |
 
 单子里可能带家长手机号、小区名。开这两个之前想清楚，或者复制时先把敏感信息删掉。
