@@ -362,5 +362,114 @@ class TestHttpServer(unittest.TestCase):
             self.assertIn("error", data)
 
 
+class TestCleanOrders(unittest.TestCase):
+    """_clean_orders：把模型返回的字段表清点成和 starts 一一对应的列表。"""
+
+    def test_length_mismatch_means_no_fields(self):
+        # 长度对不上就整体作废——错位会把 A 单的年级安到 B 单头上
+        raw = [{"grade": "初二"}, {"grade": "高一"}]
+        self.assertEqual(cw._clean_orders(raw, 3), [])
+        self.assertEqual(cw._clean_orders(raw, 1), [])
+
+    def test_not_a_list_means_no_fields(self):
+        self.assertEqual(cw._clean_orders({"grade": "初二"}, 1), [])
+        self.assertEqual(cw._clean_orders(None, 1), [])
+
+    def test_non_dict_entry_becomes_none(self):
+        self.assertEqual(cw._clean_orders(["初二", {"grade": "高一"}], 2), [None, {"grade": "高一"}])
+
+    def test_unknown_subject_is_dropped(self):
+        got = cw._clean_orders([{"subjects": ["数学", "玄学"]}], 1)
+        self.assertEqual(got, [{"subjects": ["数学"]}])
+
+    def test_all_subjects_unknown_means_no_subjects(self):
+        self.assertEqual(cw._clean_orders([{"subjects": ["玄学"]}], 1), [None])
+
+    def test_null_string_is_not_a_value(self):
+        got = cw._clean_orders([{"grade": "null", "location": "  "}], 1)
+        self.assertEqual(got, [None])
+
+    def test_out_of_range_numbers_are_dropped(self):
+        got = cw._clean_orders([{"rate": 99999, "freq": 40, "duration": 0.1}], 1)
+        self.assertEqual(got, [None])
+
+    def test_string_numbers_are_coerced(self):
+        got = cw._clean_orders([{"rate": "200", "freq": "2"}], 1)
+        self.assertEqual(got, [{"rate": 200.0, "freq": 2.0}])
+
+    def test_days_are_deduped_and_sorted(self):
+        got = cw._clean_orders([{"days": [0, 6, 6, 9, -1]}], 1)
+        self.assertEqual(got, [{"days": [0, 6]}])
+
+    def test_is_online_must_be_boolean(self):
+        got = cw._clean_orders([{"isOnline": "是"}], 1)
+        self.assertEqual(got, [None])
+        got = cw._clean_orders([{"isOnline": True}], 1)
+        self.assertEqual(got, [{"isOnline": True}])
+
+
+class TestAiSplit(unittest.TestCase):
+    """ai_split：同时返回行号和每条单子的字段。"""
+
+    def test_returns_starts_and_orders(self):
+        payload = {
+            "starts": [1, 9],
+            "orders": [{"grade": "初二", "rate": 200}, {"grade": "高一"}],
+        }
+        orig = cw._ai_json
+        cw._ai_json = lambda *a, **k: (payload, None)
+        try:
+            got, err = cw.ai_split("1\n2\n3\n4\n5\n6\n7\n8\n9\n10")
+        finally:
+            cw._ai_json = orig
+        self.assertIsNone(err)
+        self.assertEqual(got["starts"], [1, 9])
+        self.assertEqual(got["orders"], [{"grade": "初二", "rate": 200.0}, {"grade": "高一"}])
+
+    def test_orders_dropped_when_count_mismatches(self):
+        payload = {"starts": [1, 9], "orders": [{"grade": "初二"}]}
+        orig = cw._ai_json
+        cw._ai_json = lambda *a, **k: (payload, None)
+        try:
+            got, err = cw.ai_split("1\n2\n3\n4\n5\n6\n7\n8\n9\n10")
+        finally:
+            cw._ai_json = orig
+        self.assertIsNone(err)
+        self.assertEqual(got["starts"], [1, 9])
+        self.assertEqual(got["orders"], [])
+
+    def test_no_orders_key_still_splits(self):
+        payload = {"starts": [1]}
+        orig = cw._ai_json
+        cw._ai_json = lambda *a, **k: (payload, None)
+        try:
+            got, err = cw.ai_split("一整条单子")
+        finally:
+            cw._ai_json = orig
+        self.assertIsNone(err)
+        self.assertEqual(got, {"starts": [1], "orders": []})
+
+    def test_out_of_range_line_still_fails_whole_call(self):
+        payload = {"starts": [1, 99], "orders": []}
+        orig = cw._ai_json
+        cw._ai_json = lambda *a, **k: (payload, None)
+        try:
+            got, err = cw.ai_split("1\n2\n3")
+        finally:
+            cw._ai_json = orig
+        self.assertIsNone(got)
+        self.assertIn("范围", err)
+
+    def test_error_from_ai_is_passed_through(self):
+        orig = cw._ai_json
+        cw._ai_json = lambda *a, **k: (None, "没有配置 AI")
+        try:
+            got, err = cw.ai_split("whatever")
+        finally:
+            cw._ai_json = orig
+        self.assertIsNone(got)
+        self.assertEqual(err, "没有配置 AI")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

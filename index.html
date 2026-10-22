@@ -523,10 +523,10 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       <div class="fld" style="margin-top:10px">
         <label>拆单方式</label>
         <div class="togs" id="tSplit">
-          <span class="tog on" data-v="auto">自动</span>
-          <span class="tog" data-v="always">总是用 AI</span>
+          <span class="tog on" data-v="always">AI 拆单</span>
+          <span class="tog" data-v="rule">只用规则</span>
         </div>
-        <div class="h">自动：规则能切开就不麻烦 AI，切不动才问它。总是用 AI：每次都问，慢一两秒但更准。两种都不会改动原文一个字。</div>
+        <div class="h"><strong>AI 拆单（默认）</strong>：整段交给模型判断哪儿是一条新单子的开头，顺便把年级、科目、时薪、次数、地点这些字段读出来。规则认不出的写法（「92 以上」「专职女的数学老师」）它也能读。慢两三秒。<br><strong>只用规则</strong>：不调 AI，靠记住的几种起头格式切。快，但遇到没见过的写法会把好几单并成一条，字段也容易漏。AI 没配的时候自动走这条，页面会提示。</div>
       </div>
       <div class="fld" style="margin-top:14px"><div class="h" style="margin-top:0">填在这里就由浏览器直接调接口，不用启动后台，手机上也一样。四项都留空则用本地 <code>config.json</code>（需要后台开着）。</div></div>
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
@@ -1194,6 +1194,14 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       h += '<div class="ai-note block-in d1' + mcls + '"><span class="ai-dot"></span><span>' + (ink(mtxt, 46) || esc(mtxt)) + '</span></div>';
     }
 
+    // 拆单时顺手读出来的字段。规则漏认或认错的，这里会被 AI 的值覆盖，
+    // 所以要说清楚哪些数是模型给的——读错了用户才能回去核原文。
+    if(o._aiFields && o._aiFields.length){
+      var names = o._aiFields.map(function(k){ return AI_FIELD_NAMES[k] || k; });
+      var ntxt = '这条的 ' + names.join('、') + ' 是 AI 读出来的，对不上的话以单子原文为准';
+      h += '<div class="ai-note block-in d1"><span class="ai-dot"></span><span>' + esc(ntxt) + '</span></div>';
+    }
+
     h += '<div class="dims block-in d1">';
     mt.dims.forEach(function(d){
       var v = Math.round(d.v);
@@ -1280,6 +1288,8 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       if(!o.isOnline && !item.c.commuteKnown) tags.push('<span class="tag">距离待查</span>');
       if(o.isOnline) tags.push('<span class="tag good">线上</span>');
       if(o.days.length) tags.push('<span class="tag">' + o.days.map(function(d){ return DAY_NAME[d]; }).join('') + '</span>');
+      // 字段是模型读的，标一下。规则漏认的写法（「92 以上」）就靠这个兜住
+      if(o._aiFields && o._aiFields.length) tags.push('<span class="tag good">AI 读字段</span>');
 
       // --i 决定入场延迟，封顶到 8：40 条的时候末条原本要等 1.7 秒才出现，
       // 而 settle() 在 1.2 秒时就把后面那批强制显示了，看着像半截突然冒出来
@@ -1415,7 +1425,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
   function renderSplitMode(){
     var box = document.getElementById('tSplit');
     if(!box) return;
-    var cur = api.splitMode || 'auto';
+    var cur = api.splitMode || 'always';
     Array.prototype.forEach.call(box.children, function(c){
       c.classList.toggle('on', c.getAttribute('data-v') === cur);
     });
@@ -1523,7 +1533,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     }
     copyText(JSON.stringify({
       aiBase: api.aiBase, aiKey: api.aiKey, aiModel: api.aiModel, amapKey: api.amapKey,
-      splitMode: api.splitMode || 'auto'
+      splitMode: api.splitMode || 'always'
     }), document.getElementById('apiExport'));
     document.getElementById('apiHint').textContent = '配置已复制到剪贴板。换设备时在那台点「粘贴配置」，把这段粘进去就行。';
   }
@@ -1599,9 +1609,14 @@ textarea::placeholder{color:var(--faint);opacity:.75}
   // 用户根本无从判断它到底工作没有。
   var splitInfo = {by:'rule', checked:false};
 
-  function analyzeLines(lines){
-    cache = lines.map(function(line){
+  function analyzeLines(lines, aiFields){
+    // 字段要在排序之前并进去——sort 之后索引就对不上原句了
+    cache = lines.map(function(line, i){
       var o = parseOrder(line);
+      var got = aiFields && aiFields[i] ? aiFieldsTo(o, aiFields[i]) : [];
+      // 哪些字段是 AI 读出来的要记下来，详情页给用户看一眼，
+      // 免得模型读错了用户还以为是自己没看清
+      o._aiFields = got.length ? got : null;
       var c = computeCost(o, me);
       return {o:o, c:c, mt:computeMatch(o, c, me)};
     }).sort(function(a,b){ return b.mt.total - a.mt.total; });
@@ -1624,21 +1639,33 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     listScrollY = 0;
     analyzeLines(byRule);
 
-    // 规则已经给出结果了，能看就先看。只有规则明显没切开时才去问 AI，
-    // 问了也是回来校正，不阻塞在上面干等。
+    // AI 没配的话，规则结果已经在屏幕上了，但要说清楚它是规则切的：
+    // 这段要是把好几单粘成了一条，用户得知道该去补配置。
+    // 阈值取 160 字符而不是 260——三四行一条完整单子就到这个量级了，
+    // 还合成一条就该提醒；再高的阈值等于基本不提醒。
+    if(!ai.enabled){
+      if(byRule.length < 2 && String(raw).length > 160){
+        toast('这段有点长，AI 没配，先用规则切成 ' + byRule.length + ' 条；去「设条件 → 接口配置」填 Key 会更准');
+      }
+      return;
+    }
     if(!shouldAskSplit(raw, byRule)) return;
+
     aiSplit(raw).then(function(res){
       if(seq !== splitSeq) return;
       if(!res.ok){
-        toast('AI 没能接手拆单：' + res.error);
+        splitInfo = {by:'rule', checked:false};
+        toast('AI 没能接手拆单：' + res.error + '。先用规则的结果');
         return;
       }
       var byAi = cutByStarts(raw, res.starts);
-      if(!aiSplitTrusted(byAi, byRule, raw)){
+      if(!aiSplitTrusted(byAi, raw)){
         toast('AI 的拆法不太对，还是按规则的来');
         return;
       }
-      if(sameSplit(byAi, byRule)){
+      var fieldCount = 0;
+      (res.orders || []).forEach(function(f){ if(f) fieldCount++; });
+      if(sameSplit(byAi, byRule) && !fieldCount){
         // 结果没变，但要让用户知道 AI 确实看过一遍
         splitInfo = {by:'rule', checked:true};
         if(cache.length > 1) renderList();
@@ -1646,8 +1673,10 @@ textarea::placeholder{color:var(--faint);opacity:.75}
         return;
       }
       splitInfo = {by:'ai', checked:true};
-      analyzeLines(byAi);
-      toast('AI 把这段拆成了 ' + byAi.length + ' 条');
+      analyzeLines(byAi, res.orders);
+      var msg = 'AI 把这段拆成了 ' + byAi.length + ' 条';
+      if(fieldCount) msg += '，并读了 ' + fieldCount + ' 条的字段';
+      toast(msg);
     }).catch(function(){});
   }
 
@@ -1670,7 +1699,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
   // 优先级：页面里填过就用页面的，没填才回落到本地后台的 config.json。
   // 模型名给个默认值。留空的话 aiDirect() 直接 false，一个请求都不会发，
   // 而输入框里的灰色 deepseek-chat 看起来像已经填了，用户根本意识不到漏了。
-  var api = {aiBase:'', aiKey:'', aiModel:'deepseek-chat', amapKey:'', splitMode:'auto'};
+  var api = {aiBase:'', aiKey:'', aiModel:'deepseek-chat', amapKey:'', splitMode:'always'};
   var API_STORE = 'tutor-api-v1';
   var _geoCache = {};
   var _routeCache = {};
@@ -1687,6 +1716,10 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     // 老用户存的是空模型名，升级后会自动被空值覆盖掉默认值。
     // 填的是 DeepSeek 地址却卡在「没填模型名」的话，替他补上。
     if(!api.aiModel && /deepseek/i.test(api.aiBase)) api.aiModel = 'deepseek-chat';
+    // 拆单现在默认全交给 AI。老用户存的 'auto' 是「规则能切就不问 AI」，
+    // 那正是字段读不全、格式一变就切不开的根源，迁成 'always'。
+    // 想回到纯规则，在「设条件 → 拆单方式」里选「只用规则」即可。
+    if(api.splitMode === 'auto') api.splitMode = 'always';
   }
 
   function saveApi(){
@@ -1716,12 +1749,35 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     '注意：推断要克制，消息里没说的就不要编。只输出 JSON，不要任何解释文字。'
   ].join('\n');
 
-  // 拆单专用的提示词。关键点：不让模型复述原文，只让它报「哪一行是开头」。
-  // 让它抄一遍 5000 字，漏一个字、改一个标点，后面 parseOrder 就跟着错；
-  // 报行号则原文完全不动，切出来的东西和用户粘的一模一样。
+  // 字段说明。补全和拆单共用一份，免得两边对同一件事有不同说法。
+  var FIELDS_DESC = [
+    '字段说明（每条单子都要给全这些键，没提到的填 null，空数组填 []）：',
+    '- grade: 年级字符串，如 "初二"、"高一"、"小学三年级"',
+    '- subjects: 科目数组，如 ["数学"]。只认这些科目：' + SUBJECTS.join('、'),
+    '- freq: 每周上课次数，数字',
+    '- duration: 每次课的小时数，数字',
+    '- rate: 每小时课时费，数字。只给了单次总价就用总价除以时长换算',
+    '- isOnline: 是否线上课，布尔值',
+    '- location: 地点字符串，如 "海淀"、"地铁4号线人民大学站"、"线上"。保留原文写法，不要改写',
+    '- days: 星期数组，0 是周日，1 到 6 是周一到周六。"周末" 是 [6,0]',
+    '- timeOfDay: "上午" / "中午" / "下午" / "晚上" / "傍晚" / "放学后"',
+    '- teacherGender: 要求老师的性别，"男" 或 "女"',
+    '- settle: 结算方式字符串，如 "月结"',
+    '',
+    '严格要求：消息里没说的就填 null，不要推测、不要补全、不要编。'
+  ].join('\n');
+
+  // 拆单专用的提示词。它同时干两件事：
+  // 1. 判断哪一行是一条新单子的开头（只报行号）
+  // 2. 把每条单子的关键字段读出来
+  // 第一件事不让模型复述原文——让它抄一遍 5000 字，漏一个字、改一个标点，
+  // 后面 parseOrder 的字段就跟着错；报行号则原文完全不动，由 cutByStarts
+  // 从用户的文本里切，一个字都不会变。
+  // 第二件事是用户要的：规则靠记格式，遇到「92 以上」「专职女的数学老师」
+  // 这种没见过的写法就漏，字段直接让模型读更稳。
   var SPLIT_PROMPT = [
-    '你要把一段家教群消息切成若干条彼此独立的单子。',
-    '我会按行给你文本，每行前面有行号和一个制表符。你只需要判断「哪一行是一条新单子的第一行」。',
+    '你要把一段家教群消息切成若干条彼此独立的单子，并把每条单子的关键字段读出来。',
+    '我会按行给你文本，每行前面有行号和一个制表符。',
     '',
     '新单子的开头通常是这些形式：',
     '- 编号行：#1051、【编号】13205、编号：GZ6102226、【单号】',
@@ -1737,8 +1793,14 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     '- 如果某行确实像另一条单子的开始，就把它列进去',
     '- 只有一整条内容时，就只输出 [1]',
     '',
-    '只输出 JSON：{"starts":[1,9,16]}',
-    '数字是行号，从 1 开始，必须递增，第一项必须是 1。不要输出别的任何字。'
+    FIELDS_DESC,
+    '',
+    '输出格式：{"starts":[1,9,16],"orders":[{"grade":"初二",...},{...},{...}]}',
+    '- starts 是新单子起头的行号，从 1 开始，必须递增，第一项必须是 1',
+    '- orders 与 starts 一一对应，长度必须相同，第 i 个对象描述第 i 条单子',
+    '- orders 里只放字段，不要复述原文的任何文字',
+    '',
+    '只输出 JSON，不要任何解释文字。'
   ].join('\n');
 
   function extractJson(s){
@@ -2393,7 +2455,8 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       return Promise.resolve({ok:false, error:'文本超过 ' + SPLIT_MAX_LINES + ' 行，先按规则切'});
     }
     var numbered = lines.map(function(l, i){ return (i + 1) + '\t' + l; }).join('\n');
-    return aiJsonCall(SPLIT_PROMPT, numbered, 900).then(function(res){
+    // 要输出每条单子的字段，比只报行号时费 token，上限放宽松些
+    return aiJsonCall(SPLIT_PROMPT, numbered, 1800).then(function(res){
       if(!res.ok) return res;
       var starts = res.data && res.data.starts;
       if(!Array.isArray(starts) || !starts.length) return {ok:false, error:'AI 没按格式返回 starts'};
@@ -2402,7 +2465,12 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       // 结果是悄悄少了几单，比直接不用 AI 还糟。
       var bad = nums.some(function(v){ return !(v >= 1 && v <= lines.length); });
       if(bad) return {ok:false, error:'AI 给的行号超出了文本范围'};
-      return {ok:true, starts:nums};
+      // 字段和行号对不上的话就只当拆单用，别拿错位的字段去改单子——
+      // 那样会把 A 单的年级安到 B 单头上，比不补更糟。
+      var orders = Array.isArray(res.data.orders) ? res.data.orders : [];
+      if(orders.length !== nums.length) orders = [];
+      else orders = orders.map(function(x){ return (x && typeof x === 'object') ? x : null; });
+      return {ok:true, starts:nums, orders:orders};
     });
   }
 
@@ -2415,8 +2483,96 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       body: JSON.stringify({text: String(raw || '')})
     }).then(function(r){ return r.json(); }).then(function(d){
       if(!d || !d.ok) return {ok:false, error:(d && d.error) || '后台拆单失败'};
-      return {ok:true, starts: d.starts || []};
+      var starts = d.starts || [];
+      var orders = Array.isArray(d.orders) ? d.orders : [];
+      if(orders.length !== starts.length) orders = [];
+      return {ok:true, starts:starts, orders:orders};
     }).catch(function(){ return {ok:false, error:'连不上本地服务'}; });
+  }
+
+  // ---- 把 AI 读出来的字段并进单子 ----
+  // 规则靠正则匹配，写法一变就漏（「92 以上」「专职女的数学老师」都漏过）。
+  // 模型不靠记格式，所以让它读。这里**有值就覆盖**，null / 空数组不动——
+  // 只填空的话，规则认错的字段永远纠不回来，用户要的是后者。
+  // 三道保险：temperature 已是 0；prompt 要求没说的填 null；
+  // 下面每个字段都做范围和类型校验，模型编出离谱值也落不到单子上。
+  var AI_NUM_LIMITS = {
+    rate:     [1, 5000],
+    freq:     [1, 14],
+    duration: [0.25, 12]
+  };
+
+  // 给用户看的字段名。AI 读出来的字段要在界面上标出来——
+  // 模型读错的时候，用户得知道自己该去核对原文哪一行。
+  var AI_FIELD_NAMES = {
+    grade:'年级', subjects:'科目', freq:'每周次数', duration:'每次时长', rate:'时薪',
+    days:'上课日', teacherGender:'老师性别', timeOfDay:'时间段', settle:'结算方式',
+    isOnline:'是否线上', location:'地点'
+  };
+
+  function aiFieldsTo(o, f){
+    if(!f || typeof f !== 'object') return [];
+    var got = [];
+    function num(key){
+      var v = parseFloat(f[key]);
+      if(!isFinite(v) || v <= 0) return;
+      var lim = AI_NUM_LIMITS[key];
+      if(lim && (v < lim[0] || v > lim[1])) return;
+      o[key] = v; got.push(key);
+    }
+    function text(key, allow){
+      var v = typeof f[key] === 'string' ? f[key].trim() : '';
+      if(!v) return;
+      if(allow && allow.indexOf(v) < 0) return;
+      o[key] = v; got.push(key);
+    }
+    function days(key){
+      var v = Array.isArray(f[key]) ? f[key] : [];
+      var out = [];
+      v.forEach(function(d){
+        d = parseInt(d, 10);
+        if(d >= 0 && d <= 6 && out.indexOf(d) < 0) out.push(d);
+      });
+      if(!out.length) return;
+      o[key] = out.sort(function(a,b){ return a - b; }); got.push(key);
+    }
+    function subs(key){
+      var v = Array.isArray(f[key]) ? f[key] : [];
+      var out = [];
+      v.forEach(function(s){
+        s = String(s || '').trim();
+        if(s && SUBJECTS.indexOf(s) > -1 && out.indexOf(s) < 0) out.push(s);
+      });
+      if(!out.length) return;
+      o[key] = out; got.push(key);
+    }
+
+    text('grade');
+    subs('subjects');
+    num('rate'); num('freq'); num('duration');
+    days('days');
+    text('teacherGender', ['男','女']);
+    text('timeOfDay', ['上午','中午','下午','晚上','傍晚','放学后']);
+    text('settle');
+    // 线上课要把地点一起改掉，不然「线下 60 分钟」的距离分还挂在上面。
+    // 只在明确是 true 时动手：false 本来就是默认值，覆盖一遍没有意义，
+    // 还会在「AI 读出来的字段」里多出一条没信息量的「是否线上」。
+    if(f.isOnline === true){
+      o.isOnline = true;
+      o.location = '线上';
+      got.push('isOnline');
+    }
+    // 地点只接受像样的长度。模型偶尔会回一整句话，塞进 location 会把
+    // 高德查询也带偏。
+    if(typeof f.location === 'string'){
+      var loc = f.location.trim();
+      if(loc && loc.length <= 40 && loc !== 'null'){
+        o.location = loc; got.push('location');
+      }
+    }
+    // 年级归一化，把「4年级」「小四」统一成条件里能对上的写法
+    if(o.grade) o.grade = tidyGrade(o.grade);
+    return got;
   }
 
   // 按行号从原文里切。行号乱序、重复、第一项不是 1 都在这里兜住。
@@ -2448,24 +2604,23 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     return true;
   }
 
-  // 什么时候值得为拆单多花一次 AI 调用？
-  // 规则切出好几条，说明它认得这些格式，没必要再问；
-  // 只切出一条但文本很长，多半是把一整批发群消息合并了，这才是要救的。
+  // 什么时候去问 AI。默认就是问——规则靠记格式，遇到没见过的写法就切不开，
+  // 而且字段也读不全，这是把它当主路径的原因。
+  // 只有用户在「设条件」里明确选了「只用规则」才不问。
   function shouldAskSplit(raw, got){
     if(!ai.enabled) return false;
-    if(api.splitMode === 'always') return true;
-    if(got.length >= 2) return false;
-    return String(raw).length > 260;
+    if(api.splitMode === 'rule') return false;
+    return true;
   }
 
-  // AI 的结果值不值得拿来覆盖规则的结果。两个明显的坏情况：
-  // 规则清清楚楚切出了好几条，AI 却说只有一两条 —— 多半是它偷懒；
-  // 每条单子至少占两行，AI 切出的条数接近行数 —— 说明它把单子拆碎了。
-  function aiSplitTrusted(byAi, byRule, raw){
+  // AI 的结果值不值得用。这里只防一种情况：把单子拆碎了。
+  // 每条单子至少占两行，切出来的条数接近总行数就是这个毛病。
+  // 以前还会拿「AI 的条数不到规则一半」当不信任的理由，那是拿规则当基准——
+  // 而规则恰恰是会切错的那个，所以这个判断去掉了。
+  function aiSplitTrusted(byAi, raw){
     if(!byAi.length) return false;
-    if(byAi.length * 2 < byRule.length) return false;
     var lineCount = String(raw).split('\n').length;
-    if(byAi.length > Math.max(2, lineCount * 0.6)) return false;
+    if(byAi.length > Math.max(2, lineCount * 0.75)) return false;
     return true;
   }
 
@@ -2615,7 +2770,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     // 拆单方式只是下一次分析才用得上，不用清缓存重算，所以不走 onApiChanged
     Array.prototype.forEach.call(document.getElementById('tSplit').children, function(c){
       c.addEventListener('click', function(){
-        api.splitMode = c.getAttribute('data-v') || 'auto';
+        api.splitMode = c.getAttribute('data-v') || 'always';
         saveApi();
         renderSplitMode();
       });

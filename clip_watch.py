@@ -120,6 +120,14 @@ def looks_like_order(text):
 
 # ---------------- AI 补全（可选，没配就用纯规则） ----------------
 
+# 认得的科目。前端 index.html 里有一份一模一样的，改一边记得改另一边——
+# 两边不一致的话，模型返回的科目会被其中一边过滤掉。
+SUBJECTS = [
+    "英语口语", "数理化", "信息学", "奥数", "数学", "语文", "英语", "物理",
+    "化学", "生物", "地理", "历史", "政治", "科学", "编程", "钢琴", "美术",
+    "书法", "全科", "理综", "文综",
+]
+
 AI_PROMPT = """你是家教需求解析器。从用户给出的一条微信群消息里提取家教需求，只输出 JSON。
 
 字段说明：
@@ -239,10 +247,32 @@ def call_ai(text):
     return _ai_json(AI_PROMPT, text[:3000], 600)
 
 
-# 拆单专用提示词。只让模型报「哪一行是开头」，不让它复述原文——
-# 抄几千字很容易漏字改标点，后面的字段解析就跟着错。
-SPLIT_PROMPT = """你要把一段家教群消息切成若干条彼此独立的单子。
-我会按行给你文本，每行前面有行号和一个制表符。你只需要判断「哪一行是一条新单子的第一行」。
+# 字段说明。补全和拆单共用一份，免得两边对同一件事有不同说法。
+FIELDS_DESC = """字段说明（每条单子都要给全这些键，没提到的填 null，空数组填 []）：
+- grade: 年级字符串，如 "初二"、"高一"、"小学三年级"
+- subjects: 科目数组，如 ["数学"]。只认这些科目：%s
+- freq: 每周上课次数，数字
+- duration: 每次课的小时数，数字
+- rate: 每小时课时费，数字。只给了单次总价就用总价除以时长换算
+- isOnline: 是否线上课，布尔值
+- location: 地点字符串，如 "海淀"、"地铁4号线人民大学站"、"线上"。保留原文写法，不要改写
+- days: 星期数组，0 是周日，1 到 6 是周一到周六。"周末" 是 [6,0]
+- timeOfDay: "上午" / "中午" / "下午" / "晚上" / "傍晚" / "放学后"
+- teacherGender: 要求老师的性别，"男" 或 "女"
+- settle: 结算方式字符串，如 "月结"
+
+严格要求：消息里没说的就填 null，不要推测、不要补全、不要编。""" % (
+    "、".join(SUBJECTS),
+)
+
+# 拆单专用提示词。它同时干两件事：
+# 1. 判断哪一行是一条新单子的开头（只报行号）
+# 2. 把每条单子的关键字段读出来
+# 第一件事不让模型复述原文——抄几千字很容易漏字改标点，后面的字段解析
+# 就跟着错；报行号则原文完全不动，由前端 cutByStarts 从用户文本里切。
+# 第二件事是因为规则靠记格式，遇到没见过的写法就漏字段，交给模型读更稳。
+SPLIT_PROMPT = """你要把一段家教群消息切成若干条彼此独立的单子，并把每条单子的关键字段读出来。
+我会按行给你文本，每行前面有行号和一个制表符。
 
 新单子的开头通常是这些形式：
 - 编号行：#1051、【编号】13205、编号：GZ6102226、【单号】
@@ -258,14 +288,83 @@ SPLIT_PROMPT = """你要把一段家教群消息切成若干条彼此独立的�
 - 如果某行确实像另一条单子的开始，就把它列进去
 - 只有一整条内容时，就只输出 [1]
 
-只输出 JSON：{"starts":[1,9,16]}
-数字是行号，从 1 开始，必须递增，第一项必须是 1。不要输出别的任何字。"""
+%s
+
+输出格式：{"starts":[1,9,16],"orders":[{"grade":"初二",...},{...},{...}]}
+- starts 是新单子起头的行号，从 1 开始，必须递增，第一项必须是 1
+- orders 与 starts 一一对应，长度必须相同，第 i 个对象描述第 i 条单子
+- orders 里只放字段，不要复述原文的任何文字
+
+只输出 JSON，不要任何解释文字。""" % FIELDS_DESC
 
 SPLIT_MAX_LINES = 600
 
+# 字段的范围上限。模型偶尔会编出离谱值，这里挡一道，
+# 免得一个假数字把整个排序带偏。
+_AI_NUM_LIMITS = {
+    "rate": (1, 5000),
+    "freq": (1, 14),
+    "duration": (0.25, 12),
+}
+
+
+def _clean_orders(raw_orders, count):
+    """把模型返回的字段表清点成和 starts 一一对应的列表。
+
+    长度对不上就整体作废——错位的话会把 A 单的年级安到 B 单头上，
+    比不补更糟。
+    """
+    if not isinstance(raw_orders, list) or len(raw_orders) != count:
+        return []
+    out = []
+    for item in raw_orders:
+        if not isinstance(item, dict):
+            out.append(None)
+            continue
+        clean = {}
+        for key in ("grade", "teacherGender", "timeOfDay", "settle", "location"):
+            val = item.get(key)
+            if isinstance(val, str) and val.strip() and val.strip() != "null":
+                clean[key] = val.strip()[:40]
+        subs = item.get("subjects")
+        if isinstance(subs, list):
+            subs = [str(s).strip() for s in subs if str(s).strip() in SUBJECTS]
+            if subs:
+                clean["subjects"] = subs
+        for key in ("rate", "freq", "duration"):
+            try:
+                val = float(item.get(key))
+            except (TypeError, ValueError):
+                continue
+            if val <= 0:
+                continue
+            low, high = _AI_NUM_LIMITS[key]
+            if low <= val <= high:
+                clean[key] = val
+        days = item.get("days")
+        if isinstance(days, list):
+            out_days = []
+            for d in days:
+                try:
+                    d = int(d)
+                except (TypeError, ValueError):
+                    continue
+                if 0 <= d <= 6 and d not in out_days:
+                    out_days.append(d)
+            if out_days:
+                clean["days"] = sorted(out_days)
+        if isinstance(item.get("isOnline"), bool):
+            clean["isOnline"] = item["isOnline"]
+        out.append(clean or None)
+    return out
+
 
 def ai_split(text):
-    """让模型判断每条单子从第几行开始，返回 (行号列表, None) 或 (None, 错误)。
+    """让模型判断每条单子从第几行开始，顺便读出每条单子的字段。
+
+    返回 (结果 dict, None) 或 (None, 错误信息)。结果形如
+    {"starts":[1,9], "orders":[{...}, {...}]}，orders 可能为空列表
+    （模型没按格式给字段时，至少拆单还能用）。
 
     只报行号，原文由调用方自己切，保证切出来的内容和用户粘的一字不差。
     """
@@ -274,7 +373,8 @@ def ai_split(text):
         return None, "文本超过 %d 行，先按规则切" % SPLIT_MAX_LINES
     numbered = "\n".join("%d\t%s" % (i + 1, l) for i, l in enumerate(lines))
 
-    data, err = _ai_json(SPLIT_PROMPT, numbered, 900)
+    # 要输出每条单子的字段，比只报行号费 token，上限放宽松些
+    data, err = _ai_json(SPLIT_PROMPT, numbered, 1800)
     if data is None:
         return None, err
     starts = data.get("starts")
@@ -292,7 +392,7 @@ def ai_split(text):
         if not (1 <= n <= len(lines)):
             return None, "AI 给的行号超出了文本范围"
         out.append(n)
-    return out, None
+    return {"starts": out, "orders": _clean_orders(data.get("orders"), len(out))}, None
 
 
 # ---------------- 通勤时间（高德地图，可选） ----------------
@@ -659,7 +759,7 @@ class Handler(BaseHTTPRequestHandler):
             if starts is None:
                 self._json({"ok": False, "error": err})
             else:
-                self._json({"ok": True, "starts": starts})
+                self._json({"ok": True, "starts": starts["starts"], "orders": starts["orders"]})
             return
 
         if path == "/commute":
