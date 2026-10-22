@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>家教接单工具 · Windows 使用说明</title>
+<style>
+:root{
+  --bg:#FBFAF7; --card:#FFFFFF; --line:#E7E5DC; --line-soft:#F0EEE7;
+  --text:#1C1C19; --muted:#66665D; --faint:#8E8E83;
+  --accent:#0F6E56; --accent-soft:#EDF7F2;
+  --good:#0F6E56; --good-bg:#EDF7F2;
+  --warn:#9A6410; --warn-bg:#FBF3E3;
+  --bad:#9C2B2B; --bad-bg:#FBEDED;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--bg);color:var(--text);
+  font:15px/1.85 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",serif;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:740px;margin:0 auto;padding:56px 26px 96px}
+
+.kicker{font-size:12px;letter-spacing:.14em;color:var(--faint);font-family:-apple-system,sans-serif}
+h1{font-size:27px;font-weight:600;letter-spacing:-.01em;line-height:1.35;margin-top:12px}
+.lead{color:var(--muted);font-size:15px;margin-top:14px;line-height:1.8}
+.meta{display:flex;gap:18px;margin-top:20px;padding-bottom:26px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.meta span{font-size:12.5px;color:var(--faint);font-family:-apple-system,sans-serif}
+
+h2{font-size:19px;font-weight:600;margin:52px 0 8px;letter-spacing:-.005em}
+h2 .num{color:var(--faint);font-weight:400;margin-right:10px;font-size:16px}
+h3{font-size:15.5px;font-weight:600;margin:30px 0 10px;color:#2A2A25}
+h4{font-size:14px;font-weight:600;margin:20px 0 8px;color:var(--muted)}
+p{margin:12px 0;color:#2E2E29}
+.sub{font-size:13.5px;color:var(--muted);margin-top:-2px}
+
+ul,ol{margin:12px 0 12px 4px;padding-left:20px}
+li{margin:7px 0;color:#2E2E29}
+li::marker{color:var(--faint)}
+strong{font-weight:600}
+code{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:13px;background:#F2F0E9;padding:1.5px 6px;border-radius:4px;color:#3A3A33;
+}
+
+.note{
+  background:var(--card);border:1px solid var(--line);border-radius:10px;
+  padding:16px 18px;margin:20px 0;font-size:14px;line-height:1.8;
+}
+.note .t{font-size:12px;letter-spacing:.06em;color:var(--faint);margin-bottom:6px;font-family:-apple-system,sans-serif}
+.note.warn{background:var(--warn-bg);border-color:#F0E2C6}
+.note.warn .t{color:var(--warn)}
+.note.good{background:var(--good-bg);border-color:#D6EDE3}
+.note.good .t{color:var(--good)}
+
+table{
+  width:100%;border-collapse:collapse;margin:20px 0;font-size:13.5px;
+  font-family:-apple-system,sans-serif;background:var(--card);
+  border:1px solid var(--line);border-radius:8px;overflow:hidden;
+}
+th{
+  text-align:left;font-weight:600;font-size:12.5px;color:var(--muted);
+  padding:11px 14px;background:#F7F5EF;border-bottom:1px solid var(--line);
+}
+td{padding:11px 14px;border-bottom:1px solid var(--line-soft);vertical-align:top;line-height:1.65}
+td code{word-break:break-all;font-size:12px}
+.vtab td{padding:11px 10px}
+.vtab code{font-size:11.5px;word-break:normal;overflow-wrap:anywhere}
+tr:last-child td{border-bottom:0}
+
+.toc{
+  background:var(--card);border:1px solid var(--line);border-radius:10px;
+  padding:18px 22px;margin:28px 0 0;
+}
+.toc .t{font-size:12px;letter-spacing:.1em;color:var(--faint);margin-bottom:10px;font-family:-apple-system,sans-serif}
+.toc ol{margin:0;padding-left:18px}
+.toc li{margin:5px 0;font-size:13.5px;font-family:-apple-system,sans-serif}
+.toc a{color:#2E2E29;text-decoration:none;border-bottom:1px solid transparent}
+.toc a:hover{color:var(--accent);border-bottom-color:var(--accent)}
+
+.steps{counter-reset:s;list-style:none;padding:0;margin:16px 0}
+.steps li{counter-increment:s;position:relative;padding-left:34px;margin:11px 0}
+.steps li::before{
+  content:counter(s);position:absolute;left:0;top:3px;
+  width:22px;height:22px;border-radius:50%;background:var(--accent-soft);
+  color:var(--accent);font-size:12px;font-weight:600;
+  display:flex;align-items:center;justify-content:center;
+  font-family:-apple-system,sans-serif;
+}
+
+.faq{border-top:1px solid var(--line-soft);padding-top:16px;margin-top:16px}
+.faq .q{font-weight:600;font-size:14.5px;margin-bottom:6px}
+.faq .a{font-size:14px;color:#3A3A33;margin-bottom:4px}
+
+.footer{margin-top:64px;padding-top:24px;border-top:1px solid var(--line);font-size:12.5px;color:var(--faint);font-family:-apple-system,sans-serif}
+
+@media(max-width:620px){
+  .wrap{padding:36px 18px 72px}
+  h1{font-size:23px}
+  h2{font-size:17.5px;margin-top:44px}
+  table{font-size:12.5px}
+  th,td{padding:9px 10px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="kicker">使用说明</div>
+<h1>家教接单工具<br>Windows 使用说明</h1>
+<p class="lead">在你电脑上跑一个小程序，微信里复制一条家教单，旁边的页面半秒内自己跳出匹配结果。不用粘贴，不用点按钮。</p>
+
+<div class="meta">
+  <span>2026 年 10 月</span>
+  <span>Windows 10 / 11</span>
+  <span>约 5 分钟装好</span>
+</div>
+
+<div class="toc">
+  <div class="t">目录</div>
+  <ol>
+    <li><a href="#how">它是怎么工作的</a></li>
+    <li><a href="#before">装之前先确认两件事</a></li>
+    <li><a href="#install">安装与启动</a></li>
+    <li><a href="#daily">日常怎么用</a></li>
+    <li><a href="#read">结果怎么看</a></li>
+    <li><a href="#ai">开启 AI 补全</a></li>
+    <li><a href="#auto">设成开机自启</a></li>
+    <li><a href="#fix">出问题了怎么办</a></li>
+    <li><a href="#limit">局限，先说清楚</a></li>
+    <li><a href="#boundary">边界</a></li>
+  </ol>
+</div>
+
+<h2 id="how"><span class="num">01</span>它是怎么工作的</h2>
+
+<p>整个工具由三个文件组成，都在同一个文件夹里（仓库里还带了 README、测试和其他文档，不影响运行）：</p>
+
+<table>
+  <tr><th style="width:34%">文件</th><th>作用</th></tr>
+  <tr><td><code>启动监听.bat</code></td><td>双击它就能跑起来，会自动找电脑上的 Python</td></tr>
+  <tr><td><code>clip_watch.py</code></td><td>后台程序，每 0.4 秒看一眼剪贴板有没有新内容</td></tr>
+  <tr><td><code>index.html</code></td><td>页面本体，所有分析都在这里完成</td></tr>
+  <tr><td><code>config.example.json</code></td><td>AI 补全的配置模板，不用 AI 就放着别管</td></tr>
+</table>
+
+<p>流程是这样的：你在微信里复制一条单子 → 后台程序发现剪贴板变了 → 判断这像不像家教需求 → 像的话推给页面 → 页面拿它跟你的条件逐项比对 → 出结果。</p>
+
+<div class="note">
+  <div class="t">关键理解</div>
+  工具<strong>不会</strong>去读微信。它读的是你的剪贴板——你复制了什么，它才看到什么。这是它能做到零风险的原因，也是它唯一的边界。
+</div>
+
+<h2 id="before"><span class="num">02</span>装之前先确认两件事</h2>
+
+<h3>第一件：电脑上有 Python 3</h3>
+<p>不确定的话，按 <code>Win + R</code>，输入 <code>cmd</code> 回车，在黑窗口里敲 <code>python --version</code>。</p>
+<ul>
+  <li>显示 <code>Python 3.x.x</code> → 有了，跳过这步。</li>
+  <li>提示“不是内部或外部命令” → 没装。去 python.org 下载安装，<strong>安装时务必勾上 “Add Python to PATH”</strong>，否则启动脚本找不到。</li>
+</ul>
+<p class="sub">如果你装过 Anaconda，那已经自带 Python，不用再装。启动脚本会优先用它。</p>
+
+<h3>第二件：把文件夹放在固定位置</h3>
+<p>别放在下载目录或临时文件夹里。建议放 <code>D:\接单工具\</code> 这种路径简单的地方。<strong>路径里最好不要有空格和特殊符号</strong>，避免启动脚本出问题。</p>
+
+<h2 id="install"><span class="num">03</span>安装与启动</h2>
+
+<ol class="steps">
+  <li>双击 <code>启动监听.bat</code>。</li>
+  <li>会弹出一个黑色的命令行窗口，显示「接单监听 已启动」和一行地址，类似 <code>http://127.0.0.1:8791</code>。</li>
+  <li>浏览器会自动打开这个地址。页面顶部出现一条绿色的「监听中」，前面有个闪动的小圆点，说明连上了。</li>
+  <li>把这个浏览器窗口拖到屏幕一侧，宽度缩到一半左右也行，内容会自动适应。</li>
+</ol>
+
+<div class="note warn">
+  <div class="t">那个黑色窗口别关</div>
+  它是程序本体。关掉监听就停了，页面上的绿条会变成红色提示断开。想停止用 <code>Ctrl + C</code>，或者直接关窗口。
+</div>
+
+<h2 id="daily"><span class="num">04</span>日常怎么用</h2>
+
+<h3>基本流程</h3>
+<p>在微信里<strong>长按</strong>那条家教消息，选「<strong>复制</strong>」。页面会在半秒内自己跳出结果，不需要你切回去点任何东西。</p>
+
+<h3>一次复制多条</h3>
+<p>微信里可以多选消息后一起复制。粘进去之后，页面会自动判断：如果每一行都像一条独立的需求，就拆开分析，并按匹配度<strong>从高到低排序</strong>；如果只是同一条消息里的换行，会当成一条处理，不会拆错。</p>
+<p>排序之后点任意一条，可以看它的详细分析。</p>
+
+<h3>它不会乱跳</h3>
+<p>复制普通文字（比如一段聊天、一个链接、一句工作安排），页面不会反应。只有同时满足三个条件才算家教单：长度够、命中两个以上特征词（年级、科目、老师、课时等）、并且带价格线索（元、块、课时费、时薪）。</p>
+
+<h3>手动模式</h3>
+<p>如果只是想临时算一单，不用开监听。直接双击 <code>index.html</code> 用浏览器打开，把内容粘进输入框，点「分析输入框里的内容」就行。也可以点「从剪贴板读取并分析」，一键读当前剪贴板。</p>
+
+<h2 id="read"><span class="num">05</span>结果怎么看</h2>
+
+<p>结果页从上到下分四块：</p>
+
+<table>
+  <tr><th style="width:26%">区块</th><th>看什么</th></tr>
+  <tr><td>匹配度</td><td>百分制总分加结论。85 以上是「高度匹配」，70 以上「值得聊」，50 以下「不建议接」</td></tr>
+  <tr><td>六个维度</td><td>科目、年级、课时费、距离、时间、要求，逐项打分并写一句为什么</td></tr>
+  <tr><td>钱和时间</td><td>每周收入、<strong>净时薪</strong>、每周路上多少小时、月净收入</td></tr>
+  <tr><td>话术</td><td>抢单开场、谈课时费、约试课，各一段，点右上角直接复制</td></tr>
+</table>
+
+<div class="note good">
+  <div class="t">最该看的是净时薪</div>
+  「200 元一小时」听起来不错，但如果单程 40 分钟、每周两次，扣掉路上时间和车费，实际净时薪可能只有 115。这个数字才是你真正在赚的钱，也是这个工具存在的意义。
+</div>
+
+<p>第一次用之前记得点右上角「<strong>设条件</strong>」，把你的科目、年级、常去区域和通勤时间、净时薪底线填一遍。这些存在浏览器本地，填一次就够了。</p>
+<p class="sub">区域那条最关键，格式是 <code>海淀:25, 朝阳:45</code>，直接决定距离这一项算得准不准。没配的区域会被标成「距离未知」。</p>
+
+<h2 id="ai"><span class="num">06</span>开启 AI 补全（可选）</h2>
+
+<p>规则解析只认常见写法。有些单子写得很随意，比如「孩子高二数学老是七十多分，一周来两次，价格好商量」——「来两次」这种说法规则认不出频次，单次时长和价格干脆没写。这些空着的字段，可以让 AI 补上。</p>
+
+<h4>它是怎么工作的</h4>
+<p>规则先跑，一秒内出结果，该显示的立刻显示。然后如果发现关键字段缺失，才在后台调一次 AI，拿到结果后补上并重算匹配度。所以<strong>速度不受影响</strong>，AI 只负责填空，不会改掉规则已经认出来的内容。</p>
+
+<h4>怎么配</h4>
+<ol class="steps">
+  <li>去模型厂商那边申请一个 API Key，DeepSeek、Kimi、智谱、通义选一个，注册后充几块钱。</li>
+  <li>在工具文件夹里，把 <code>config.example.json</code> 复制一份，改名为 <code>config.json</code>。</li>
+  <li>用记事本打开，把 <code>api_key</code> 那一行的值换成你申请到的 key。</li>
+  <li>保存，重启监听程序。黑色窗口里会多一行「AI 已开启」。</li>
+</ol>
+
+<h4>常见厂商怎么填</h4>
+<table class="vtab">
+  <tr><th style="width:15%">厂商</th><th>base_url</th><th style="width:22%">model</th></tr>
+  <tr><td>DeepSeek</td><td><code>https://api.deepseek.com/v1</code></td><td><code>deepseek-chat</code></td></tr>
+  <tr><td>Kimi</td><td><code>https://api.moonshot.cn/v1</code></td><td><code>moonshot-v1-8k</code></td></tr>
+  <tr><td>智谱</td><td><code>https://open.bigmodel.cn/api/paas/v4</code></td><td><code>glm-4-flash</code></td></tr>
+  <tr><td>通义千问</td><td><code>https://dashscope.aliyuncs.com/compatible-mode/v1</code></td><td><code>qwen-plus</code></td></tr>
+</table>
+
+<h4>结果里会怎么显示</h4>
+<p>补全成功时，匹配度下面会出现一行提示：「AI 补全了：频次、课时费」，告诉你哪些字段是它补的。如果它顺带读到了别的东西，比如「家长说孩子抵触补课」，会单独列在「AI 读到的额外信息」里。</p>
+<p>没配 key、网络不通、key 失效，都会在同一个位置显示原因，然后退回纯规则结果，不影响你正常用。</p>
+
+<div class="note">
+  <div class="t">隐私和成本，自己权衡</div>
+  开启之后，单子原文会发给模型厂商。<strong>不开就完全不联网</strong>，所有解析都在本机完成。费用上用便宜模型每单几分钱，一天几十单一个月也就几块钱。
+</div>
+
+<h2 id="auto"><span class="num">07</span>设成开机自启</h2>
+
+<p>默认每次开机都要手动双击一次。如果嫌麻烦，可以设成开机自动跑：</p>
+
+<ol class="steps">
+  <li>右键 <code>启动监听.bat</code>，选「创建快捷方式」。</li>
+  <li>按 <code>Win + R</code>，输入 <code>shell:startup</code>，回车。会打开一个启动文件夹。</li>
+  <li>把刚才那个快捷方式拖进去。</li>
+</ol>
+
+<p>之后每次开机，程序会自动启动并打开页面。想取消就把快捷方式删掉。</p>
+
+<div class="note">
+  <div class="t">小提醒</div>
+  设了自启之后，每次开机都会弹一个黑色命令行窗口，属于正常现象。嫌它碍事的话可以最小化，别关。
+</div>
+
+<h2 id="fix"><span class="num">08</span>出问题了怎么办</h2>
+
+<div class="faq">
+  <div class="q">双击 bat，窗口闪一下就没了</div>
+  <div class="a">基本是没装 Python，或者装了但没加到 PATH。按第 02 节的方法验证一下。脚本里写了提示，但窗口关闭太快可能看不到——可以在文件夹里按住 Shift 右键，选「在此处打开 PowerShell 窗口」，手动敲 <code>python clip_watch.py</code>，就能看到具体报错。</div>
+</div>
+
+<div class="faq">
+  <div class="q">浏览器没自动打开</div>
+  <div class="a">看黑色窗口里打印的地址，手动复制到浏览器打开。地址是 <code>http://127.0.0.1:8791</code>，如果 8791 被占用会自动换成 8792、8793，以窗口里显示的为准。</div>
+</div>
+
+<div class="faq">
+  <div class="q">页面顶部没有绿色监听条</div>
+  <div class="a">说明页面没连上后台。两种可能：一是你双击打开的是 <code>index.html</code> 文件（这样是手动模式，本来就没有监听条）；二是后台没跑起来，或者端口不对。关掉页面，重新双击 bat 一次。</div>
+</div>
+
+<div class="faq">
+  <div class="q">复制了单子，页面没反应</div>
+  <div class="a">按顺序排查：一、微信里是不是用的「复制」而不是「转发」；二、黑色窗口还在不在；三、那条内容是不是太短、或者没有价格信息，被过滤规则挡掉了。可以手动粘进输入框试试，如果手动能分析、监听不能，多半是过滤规则的问题。</div>
+</div>
+
+<div class="faq">
+  <div class="q">页面上的绿条变成了红字</div>
+  <div class="a">后台断开了。通常是黑色窗口被关掉，或者程序崩了。刷新页面前先确认后台还在跑，否则刷新也连不上。</div>
+</div>
+
+<div class="faq">
+  <div class="q">杀毒软件报警</div>
+  <div class="a">脚本会读剪贴板、会开一个本地端口，某些安全软件会敏感。代码是纯 Python 标准库写的，不到 200 行，可以直接打开看。确实不放心就加白名单。</div>
+</div>
+
+<h2 id="limit"><span class="num">09</span>局限，先说清楚</h2>
+
+<ul>
+  <li><strong>电脑必须开着，程序必须跑着。</strong>合盖休眠、关机，监听就停。</li>
+  <li><strong>只认电脑上的剪贴板。</strong>你在手机上复制的消息，不会跑到电脑剪贴板里，工具也就看不见。唯一的例外是开了跨设备同步（见下）。</li>
+  <li><strong>它不知道你复制的是哪一条。</strong>你复制什么它就分析什么，没有“只盯某一个群”的能力——因为它压根不读群，只读你交出来的那一条。</li>
+  <li><strong>识别靠规则，不是万能的。</strong>格式特别奇怪的单子可能解析不全，比如用很少见的写法描述时间或价格。这时会显示「未说明」，你可以手动补看一眼。</li>
+  <li><strong>不会开机自启</strong>，需要按第 06 节手动设一次。</li>
+</ul>
+
+<div class="note">
+  <div class="t">一个可以叠加的小技巧</div>
+  如果你也用 Android 手机，可以在手机上装「手机连接」（Phone Link）并开启跨设备复制粘贴。这样手机上复制的东西会同步到电脑剪贴板，监听程序一样能捕获。延迟通常一两秒，够用但不稳定，适合当补充，不适合当主力。
+</div>
+
+<h2 id="boundary"><span class="num">10</span>边界</h2>
+
+<h3>它不做的事</h3>
+<ul>
+  <li><strong>不碰微信协议。</strong>不用第三方登录、不 hook、不破解。所以不存在封号风险，也不会有法律问题。</li>
+  <li><strong>不联网。</strong>所有分析在本机完成，剪贴板内容不会发送到任何服务器。断网也能正常用。</li>
+  <li><strong>不保存历史。</strong>关掉页面，这一单的分析就没了。你的接单条件只存在浏览器本地存储里。</li>
+</ul>
+
+<h3>需要你自己注意的</h3>
+<ul>
+  <li>分析结果里会出现学生年级、科目、家长报价。截图发给别人之前，留意别把家长的原话带出去。</li>
+  <li>群里的信息是别人发的，转述给第三方之前想一下是否合适。</li>
+</ul>
+
+<div class="footer">
+  文档对应工具版本：2026 年 10 月。文件夹里应当有四个文件：<code>index.html</code>、<code>clip_watch.py</code>、<code>启动监听.bat</code>，以及本说明。
+</div>
+
+</div>
+</body>
+</html>

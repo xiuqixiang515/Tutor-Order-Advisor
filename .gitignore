@@ -1,0 +1,22 @@
+# 本地配置，含你的 API Key，绝对不要提交
+config.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 临时文件（截图、调试用的 Chrome profile 等）
+_cd/
+_*.png
+_*.html
+*.log

@@ -1,0 +1,6 @@
+{
+  "base_url": "https://api.deepseek.com/v1",
+  "api_key": "把这里换成你的 API Key",
+  "model": "deepseek-chat",
+  "timeout": 20
+}

@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0F6E56">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="接单">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<title>接单匹配 · 家教单自动评估</title>
+<style>
+:root{
+  --bg:#F6F6F3; --card:#FFFFFF; --line:#E4E3DC; --line-soft:#EFEEE8;
+  --text:#1A1A18; --muted:#6B6B63; --faint:#8A8A80;
+  --accent:#0F6E56; --accent-dark:#0B5744; --accent-soft:#E1F5EE;
+  --good:#0F6E56; --warn:#BA7517; --bad:#A32D2D;
+  --good-bg:#EBF7F1; --warn-bg:#FBF1DF; --bad-bg:#FAECEC;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--text);
+  font:15px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased; padding-bottom:64px;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:32px 24px 0}
+header h1{font-size:22px;font-weight:600;letter-spacing:-.01em}
+header p{color:var(--muted);font-size:14px;margin-top:6px}
+
+.pbar{
+  display:flex;align-items:center;gap:12px;margin-top:20px;
+  background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;
+}
+.pbar .lbl{font-size:12px;color:var(--faint);flex-shrink:0;letter-spacing:.03em}
+.pbar .txt{font-size:13.5px;color:var(--text);flex:1;line-height:1.5}
+.pbar .txt b{font-weight:500;color:var(--accent)}
+
+.ppanel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:4px 20px 20px;margin-top:10px}
+.group{padding-top:16px}
+.group + .group{border-top:1px solid var(--line-soft);margin-top:16px}
+.group-t{font-size:12px;color:var(--faint);letter-spacing:.04em;margin-bottom:10px}
+.row{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
+.fld label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+.fld input{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 11px;font:inherit;font-size:13.5px;background:#FCFCFA;outline:none}
+.fld input:focus{border-color:var(--accent)}
+.fld .h{font-size:11.5px;color:var(--faint);margin-top:4px}
+
+.togs{display:flex;flex-wrap:wrap;gap:7px}
+.tog{
+  font-size:12.5px;padding:6px 12px;border-radius:7px;border:1px solid var(--line);
+  background:#fff;color:#55554E;cursor:pointer;user-select:none;transition:all .13s;
+}
+.tog:hover{border-color:#C9C8BF}
+.tog.on{background:var(--accent-soft);border-color:#B9DFD1;color:var(--accent);font-weight:500}
+
+.grid{display:grid;grid-template-columns:380px 1fr;gap:18px;align-items:start;margin-top:18px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px}
+.panel-title{font-size:12.5px;color:var(--faint);letter-spacing:.03em;margin-bottom:11px;display:flex;justify-content:space-between;align-items:center}
+
+textarea{
+  width:100%;min-height:172px;border:1px solid var(--line);border-radius:10px;
+  padding:13px 14px;font:inherit;font-size:14px;line-height:1.7;resize:vertical;
+  background:#FCFCFA;color:inherit;outline:none;transition:border-color .15s,box-shadow .15s;
+}
+textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(15,110,86,.08)}
+textarea::placeholder{color:#B5B4AA}
+
+.btn-primary{
+  width:100%;margin-top:11px;padding:12px;border:0;border-radius:10px;
+  background:var(--accent);color:#fff;font:inherit;font-weight:500;cursor:pointer;transition:background .15s;
+}
+.btn-primary:hover{background:var(--accent-dark)}
+.btn-secondary{
+  width:100%;margin-top:8px;padding:11px;border:1px solid var(--line);border-radius:10px;
+  background:#fff;color:#4A4A44;font:inherit;font-size:14px;cursor:pointer;transition:all .15s;
+}
+.btn-secondary:hover{border-color:#C9C8BF;background:#FAFAF7}
+.toast{
+  position:fixed;left:50%;bottom:32px;transform:translateX(-50%) translateY(10px);
+  background:#2A2A26;color:#fff;font-size:13px;padding:10px 18px;border-radius:8px;
+  opacity:0;pointer-events:none;transition:all .22s;z-index:99;max-width:80vw;text-align:center;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.btn-ghost{
+  padding:6px 11px;border:1px solid var(--line);border-radius:8px;background:#fff;
+  font:inherit;font-size:12.5px;color:#4A4A44;cursor:pointer;transition:all .15s;flex-shrink:0;
+}
+.btn-ghost:hover{border-color:#C9C8BF;background:#FAFAF7}
+.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+.chip{font-size:12px;padding:5px 10px;border-radius:7px;background:#F1F0EA;color:#55554E;cursor:pointer;border:1px solid transparent}
+.chip:hover{background:var(--accent-soft);color:var(--accent);border-color:#C7E6DB}
+
+.placeholder{text-align:center;padding:70px 24px;color:var(--faint)}
+.placeholder .big{font-size:15px;color:var(--muted);margin-bottom:8px}
+.placeholder .sub{font-size:13px;line-height:1.9}
+
+.result-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+.badge{display:inline-block;padding:5px 12px;border-radius:7px;font-size:13px;font-weight:500}
+.badge.good{background:var(--good-bg);color:var(--good)}
+.badge.warn{background:var(--warn-bg);color:var(--warn)}
+.badge.bad{background:var(--bad-bg);color:var(--bad)}
+.big-num{display:flex;align-items:baseline;gap:5px;margin-top:9px}
+.big-num .n{font-size:44px;font-weight:600;letter-spacing:-.03em;line-height:1}
+.big-num .u{font-size:14px;color:var(--faint)}
+.match-track{height:6px;border-radius:3px;background:#EDECE6;overflow:hidden;margin-top:14px}
+.match-track i{display:block;height:100%;border-radius:3px}
+.ai-note{
+  display:flex;align-items:center;gap:8px;margin-top:14px;font-size:12.5px;
+  color:var(--muted);background:#F7F6F0;border:1px solid var(--line);
+  border-radius:8px;padding:8px 12px;line-height:1.5;
+}
+.ai-note.loading{color:var(--warn);background:var(--warn-bg);border-color:#F0E2C6}
+.ai-note.bad{color:var(--bad);background:var(--bad-bg);border-color:#F2DADA}
+.ai-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
+.ai-note.loading .ai-dot{animation:pulse 1.2s infinite}
+
+.dims{display:grid;grid-template-columns:1fr 1fr;gap:14px 22px;margin-top:20px}
+.dim-h{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px}
+.dim-h .k{color:var(--muted)}
+.dim-h .v{font-weight:500;font-variant-numeric:tabular-nums}
+.bar{height:4px;background:#EDECE6;border-radius:2px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:2px}
+.dim-n{font-size:11.5px;color:var(--faint);margin-top:5px;line-height:1.45}
+
+.sec-t{font-size:12px;color:var(--faint);letter-spacing:.04em;margin:24px 0 10px}
+.li{display:flex;gap:9px;font-size:13.5px;padding:4px 0;line-height:1.6}
+.li .d{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:8px}
+.d.good{background:var(--good)} .d.warn{background:var(--warn)} .d.bad{background:var(--bad)}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:1px;background:var(--line-soft);border:1px solid var(--line-soft);border-radius:10px;overflow:hidden}
+.st{background:#fff;padding:10px 12px}
+.st .k{font-size:11px;color:var(--faint)}
+.st .v{font-size:14.5px;font-weight:500;margin-top:2px;font-variant-numeric:tabular-nums}
+.st .v small{font-weight:400;font-size:11px;color:var(--faint);margin-left:2px}
+
+.talk{border:1px solid var(--line);border-radius:10px;padding:14px;background:#FCFCFA;margin-bottom:9px}
+.talk-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px}
+.talk-t{font-size:12.5px;color:var(--muted)}
+.talk-b{font-size:13.5px;white-space:pre-wrap;line-height:1.8;color:#2A2A26}
+
+.rank-item{display:flex;gap:14px;align-items:center;padding:14px 4px;border-bottom:1px solid var(--line-soft);cursor:pointer}
+.rank-item:last-child{border-bottom:0}
+.rank-item:hover{background:#FAFAF7}
+.rank-score{width:52px;flex-shrink:0;text-align:center}
+.rank-score .n{font-size:21px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums}
+.rank-score .u{font-size:10.5px;color:var(--faint);margin-top:2px}
+.rank-body{flex:1;min-width:0}
+.rank-title{font-size:14px;font-weight:500}
+.rank-sub{font-size:12.5px;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank-tags{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.tag{font-size:11px;padding:2px 7px;border-radius:5px;background:#F1F0EA;color:#66665E}
+.tag.bad{background:var(--bad-bg);color:var(--bad)}
+.tag.good{background:var(--good-bg);color:var(--good)}
+
+.back{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);cursor:pointer;margin-bottom:14px;user-select:none}
+.back:hover{color:var(--accent)}
+
+.live{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:12.5px;color:var(--muted);background:var(--accent-soft);border:1px solid #C7E6DB;border-radius:8px;padding:8px 12px}
+.live .dl{width:7px;height:7px;border-radius:50%;background:var(--accent);flex-shrink:0}
+.live.on .dl{animation:pulse 1.6s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.flash{animation:flash .9s ease}
+@keyframes flash{0%{background:#EFF9F4}100%{background:transparent}}
+
+@media(max-width:880px){
+  .wrap{padding:22px 16px 0}
+  .grid{grid-template-columns:1fr}
+  .dims{grid-template-columns:1fr}
+  .big-num .n{font-size:38px}
+  textarea{min-height:96px}
+  .pbar{flex-wrap:wrap}
+  .pbar .txt{flex-basis:100%;order:3;font-size:12.5px;min-width:0;word-break:break-word}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>接单匹配</h1>
+    <p>先设定你的条件，之后每来一条单子，自动算出匹配度。</p>
+  </header>
+
+  <div class="live" id="liveBar" style="display:none">
+    <span class="dl"></span>
+    <span id="liveText">监听中 · 在微信里复制一条单子就会自动跳出来</span>
+  </div>
+
+  <div class="pbar">
+    <span class="lbl">我的条件</span>
+    <span class="txt" id="pSummary"></span>
+    <button class="btn-ghost" id="pToggle">设条件</button>
+  </div>
+
+  <div class="ppanel" id="pPanel" style="display:none">
+    <div class="group">
+      <div class="group-t">教什么</div>
+      <div class="togs" id="tSubjects"></div>
+      <div class="togs" id="tGrades" style="margin-top:9px"></div>
+    </div>
+
+    <div class="group">
+      <div class="group-t">在哪教</div>
+      <div class="row">
+        <div class="fld" style="grid-column:1/-1">
+          <label>常去区域和单程时间</label>
+          <input type="text" id="fAreas" placeholder="海淀:25, 朝阳:45, 西城:35">
+          <div class="h">格式「区域:分钟」，逗号分开。列表外的区域判为距离未知。</div>
+        </div>
+        <div class="fld">
+          <label>最远能接受（分钟）</label>
+          <input type="number" id="fMaxCommute" min="0" step="5">
+        </div>
+        <div class="fld">
+          <label>往返车费（元）</label>
+          <input type="number" id="fFare" min="0" step="1">
+        </div>
+      </div>
+      <div class="togs" style="margin-top:10px">
+        <span class="tog" id="tOnline">接线上课</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-t">多少钱值得</div>
+      <div class="row">
+        <div class="fld">
+          <label>净时薪底线（元/时）</label>
+          <input type="number" id="fMinRate" min="0" step="10">
+          <div class="h">扣掉路上时间和车费之后</div>
+        </div>
+        <div class="fld">
+          <label>理想净时薪（元/时）</label>
+          <input type="number" id="fIdealRate" min="0" step="10">
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-t">什么时候有空</div>
+      <div class="togs" id="tDays"></div>
+      <div class="row" style="margin-top:12px">
+        <div class="fld">
+          <label>每周最多投入（小时）</label>
+          <input type="number" id="fMaxHours" min="0" step="1">
+        </div>
+        <div class="fld">
+          <label>目前已排课时（小时/周）</label>
+          <input type="number" id="fUsedHours" min="0" step="1">
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-t">其他条件</div>
+      <div class="togs" id="tGender" style="margin-bottom:10px"></div>
+      <div class="togs">
+        <span class="tog" id="tCert">有教师资格证</span>
+        <span class="tog" id="tComp">有竞赛辅导经验</span>
+        <span class="tog" id="tElite">985 / 211 或研究生</span>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <div class="fld" style="grid-column:1/-1">
+          <label>不接的类型（关键词，逗号分开）</label>
+          <input type="text" id="fExclude" placeholder="艺考, 成人, 只招女生">
+        </div>
+        <div class="fld">
+          <label>已带学生数</label>
+          <input type="number" id="fCount" min="0">
+        </div>
+        <div class="fld">
+          <label>名片</label>
+          <input type="text" id="fCard">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <section class="panel">
+      <div class="panel-title">
+        <span>粘贴群消息</span>
+        <span>Ctrl + Enter</span>
+      </div>
+      <textarea id="input" placeholder="粘一条，或者一次粘多条（每行一条），会自动排序。"></textarea>
+      <button class="btn-primary" id="paste">从剪贴板读取并分析</button>
+      <button class="btn-secondary" id="go">分析输入框里的内容</button>
+      <div class="chips" id="samples"></div>
+    </section>
+
+    <section class="panel" id="out">
+      <div class="placeholder">
+        <div class="big">还没有单子</div>
+        <div class="sub">左边粘一条群消息，我会拿它跟你的条件逐项对。<br>粘贴多条时会自动按匹配度排序，先看最值得回的那条。</div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var CN = {'零':0,'一':1,'二':2,'两':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10};
+  var SUBJECTS = ['英语口语','数理化','信息学','奥数','数学','语文','英语','物理','化学','生物','地理','历史','政治','科学','编程','钢琴','美术','书法','全科','理综','文综'];
+  var GRADE_OPTS = ['小学','初一','初二','初三','高一','高二','高三'];
+  var DAY_NAME = ['周日','周一','周二','周三','周四','周五','周六'];
+  var DAY_MAP = {'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'日':0,'天':0};
+  var DISTRICTS = ['海淀','朝阳','西城','东城','丰台','石景山','昌平','通州','大兴','顺义','房山','门头沟','怀柔','密云','平谷','延庆',
+    '浦东','徐汇','长宁','静安','普陀','虹口','杨浦','黄浦','闵行','宝山','嘉定','松江','青浦','奉贤','金山','崇明',
+    '天河','越秀','海珠','荔湾','白云','黄埔','番禺','花都','南沙','从化','增城',
+    '福田','南山','罗湖','宝安','龙岗','龙华','盐田','光明','坪山','大鹏',
+    '西湖','上城','拱墅','滨江','余杭','萧山','江干','武侯','锦江','青羊','金牛','成华'];
+
+  function toNum(s){
+    if(s === null || s === undefined) return null;
+    s = String(s).trim();
+    if(/^\d+(\.\d+)?$/.test(s)) return parseFloat(s);
+    if(s === '十') return 10;
+    if(s.length === 2 && s[0] === '十') return 10 + (CN[s[1]] || 0);
+    if(s.length === 2 && s[1] === '十') return (CN[s[0]] || 0) * 10;
+    if(s.length === 1 && s in CN) return CN[s];
+    return null;
+  }
+  function esc(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  var DEFAULT_ME = {
+    subjects: ['数学','物理'],
+    grades: ['初二','初三','高一','高二'],
+    areas: {'海淀':25,'朝阳':45},
+    maxCommute: 50,
+    fare: 8,
+    online: true,
+    minRate: 130,
+    idealRate: 200,
+    days: [1,3,6,0],
+    maxHours: 12,
+    usedHours: 0,
+    gender: '男',
+    cert: false,
+    comp: true,
+    elite: true,
+    exclude: ['艺考'],
+    count: 6,
+    card: 'XX大学 · 数学系 · 大三'
+  };
+
+  var me = JSON.parse(JSON.stringify(DEFAULT_ME));
+
+  function parseOrder(t){
+    var o = { raw: t }, m;
+
+    if(m = t.match(/高\s*([一二三123])/)) o.grade = '高' + m[1];
+    else if(m = t.match(/初\s*([一二三123])/)) o.grade = '初' + m[1];
+    else if(m = t.match(/小\s*([一二三四五六123456])/)) o.grade = '小' + m[1];
+    else if(m = t.match(/([一二三四五六123456])\s*年级/)) o.grade = m[1] + '年级';
+    else if(m = t.match(/(小学|初中|高中|艺考|大学|成人|考研)/)) o.grade = m[1];
+
+    var tmp = t, subs = [];
+    SUBJECTS.slice().sort(function(a,b){ return b.length - a.length; }).forEach(function(s){
+      if(tmp.indexOf(s) > -1){ subs.push(s); tmp = tmp.split(s).join('　'); }
+    });
+    o.subjects = subs;
+
+    if(/(女老师|女教师|女家教|要女|限女|女生优先|只招女)/.test(t)) o.teacherGender = '女';
+    else if(/(男老师|男教师|男家教|要男|限男|男生优先|只招男)/.test(t)) o.teacherGender = '男';
+
+    if(m = t.match(/每(?:周|星期)\s*([一二三四五六七两1-7])\s*次/)) o.freq = toNum(m[1]);
+    else if(m = t.match(/(?:一周|一星期)\s*([一二三四五六七两1-7])\s*次/)) o.freq = toNum(m[1]);
+    else if(m = t.match(/([一二三四五六七两1-7])\s*次\s*\/?\s*(?:周|星期)/)) o.freq = toNum(m[1]);
+
+    if(m = t.match(/每次\s*([\d.]+|[一两])\s*(?:个)?\s*小时/)) o.duration = toNum(m[1]);
+    else if(m = t.match(/([\d.]+)\s*小时\s*\/\s*次/)) o.duration = parseFloat(m[1]);
+    else if(m = t.match(/(?:一次|每次|每节)\s*([\d.]+|[一二两三四])\s*(?:个)?\s*小时/)) o.duration = toNum(m[1]);
+    else if(m = t.match(/([\d.]+)\s*(?:个)?\s*小时/)) o.duration = parseFloat(m[1]);
+
+    if(m = t.match(/(\d+)\s*(?:元|块|rmb)?\s*(?:\/|每)\s*(?:小时|h|时|课时|节)/i)) o.rate = parseInt(m[1],10);
+    else if(m = t.match(/(?:时薪|每小时|一小时|课时费)\s*(?:为|是|：|:)?\s*(\d+)/)) o.rate = parseInt(m[1],10);
+    else if(m = t.match(/(\d+)\s*(?:元|块)\s*(?:一小时|每小时)/)) o.rate = parseInt(m[1],10);
+
+    if(!o.rate){
+      var total = null;
+      if(m = t.match(/(\d{2,5})\s*(?:元|块)\s*(?:\/\s*次|一次|每次)/)) total = parseInt(m[1],10);
+      else if(m = t.match(/(?:一次|每次|每节)\s*(?:是|收|给|要)?\s*(\d{2,5})(?![\d.])/)) total = parseInt(m[1],10);
+      if(total && o.duration) o.rate = Math.round(total / o.duration);
+    }
+
+    o.isOnline = /(线上|网课|视频授课|在线授课|网络授课|线上辅导)/.test(t);
+    if(m = t.match(/地铁\s*(\d+)\s*号线\s*([\u4e00-\u9fa5]{2,7}?)(?:站|附近|口)/)) o.location = '地铁' + m[1] + '号线 ' + m[2] + '站';
+    for(var i=0;i<DISTRICTS.length;i++){
+      if(t.indexOf(DISTRICTS[i]) > -1){
+        o.district = DISTRICTS[i];
+        if(!o.location) o.location = DISTRICTS[i] + (t.indexOf(DISTRICTS[i] + '区') > -1 ? '区' : '');
+        break;
+      }
+    }
+    if(o.isOnline) o.location = '线上';
+
+    var days = [], re = /(?:周|星期)([一二三四五六日天])/g, dm;
+    while((dm = re.exec(t))) days.push(DAY_MAP[dm[1]]);
+    if(!days.length && /周末/.test(t)) days = [6, 0];
+    if(!days.length && /工作日/.test(t)) days = [1,2,3,4,5];
+    o.days = days;
+
+    if(m = t.match(/(上午|中午|下午|晚上|傍晚|放学后)/)) o.timeOfDay = m[1];
+    if(m = t.match(/(月结|次结|周结|预付|现结|押一付一)/)) o.settle = m[1];
+
+    return o;
+  }
+
+  function gradeSet(g){
+    if(!g) return [];
+    if(g === '小学') return ['小学'];
+    if(/^小[一二三四五六]$/.test(g) || /^[一二三四五六]年级$/.test(g)) return ['小学'];
+    if(g === '初中') return ['初一','初二','初三'];
+    if(g === '高中') return ['高一','高二','高三'];
+    if(/^初[一二三]$/.test(g) || /^高[一二三]$/.test(g)) return [g];
+    return [];
+  }
+
+  function normGrade(g){
+    if(!g) return '';
+    if(/^小/.test(g) || /^[一二三四五六]\s*年级$/.test(g)){
+      var n = g.replace(/[^一二三四五六1-6]/g,'');
+      return '小学' + (n ? n + '年级' : '');
+    }
+    return g;
+  }
+
+  function computeCost(o, cfg){
+    var freq = o.freq || 1;
+    var dur = o.duration || 2;
+    var rate = o.rate || 0;
+
+    var commuteMin = 0, commuteKnown = true;
+    if(!o.isOnline){
+      if(o.district && cfg.areas[o.district] != null) commuteMin = cfg.areas[o.district];
+      else if(o.location && cfg.areas[o.location] != null) commuteMin = cfg.areas[o.location];
+      else { commuteMin = cfg.maxCommute; commuteKnown = false; }
+    }
+
+    var grossWeek = rate * dur * freq;
+    var fareWeek = o.isOnline ? 0 : cfg.fare * 2 * freq;
+    var commuteWeekH = (commuteMin / 60) * 2 * freq;
+    var teachWeekH = dur * freq;
+    var totalWeekH = teachWeekH + commuteWeekH;
+    var netWeek = grossWeek - fareWeek;
+    var netRate = totalWeekH > 0 ? netWeek / totalWeekH : 0;
+
+    return {
+      freq: freq, dur: dur, rate: rate, commuteMin: commuteMin, commuteKnown: commuteKnown,
+      grossWeek: grossWeek, fareWeek: fareWeek, netWeek: netWeek,
+      teachWeekH: teachWeekH, commuteWeekH: commuteWeekH, totalWeekH: totalWeekH,
+      netRate: Math.max(0, netRate), month: netWeek * 4.3
+    };
+  }
+
+  function computeMatch(o, c, cfg){
+    var dims = [];
+
+    var sub = 0, subNote = '';
+    if(!o.subjects.length){
+      sub = 55; subNote = '单子没写科目，要问清楚';
+    } else if(o.subjects.indexOf('全科') > -1){
+      if(cfg.subjects.length >= 2){ sub = 72; subNote = '要全科，你能覆盖 ' + cfg.subjects.join('、'); }
+      else { sub = 25; subNote = '要全科，你只教 ' + (cfg.subjects.join('、') || '未设置'); }
+    } else {
+      var hit = o.subjects.filter(function(s){ return cfg.subjects.indexOf(s) > -1; });
+      if(hit.length){ sub = 100; subNote = '命中 ' + hit.join('、'); }
+      else { sub = 0; subNote = '你教 ' + (cfg.subjects.join('、') || '未设置') + '，这单是 ' + o.subjects.join('、'); }
+    }
+    dims.push({k:'科目', v:sub, note:subNote, hard:true});
+
+    var og = gradeSet(o.grade), mg = cfg.grades;
+    var grd = 0, grdNote = '';
+    if(!og.length){
+      grd = 55; grdNote = '单子没写年级';
+    } else {
+      var gh = og.filter(function(g){ return mg.indexOf(g) > -1; });
+      if(gh.length){ grd = 100; grdNote = normGrade(o.grade) + ' 在你的范围内'; }
+      else { grd = 0; grdNote = '你教 ' + (mg.join('、') || '未设置') + '，这单是 ' + normGrade(o.grade); }
+    }
+    dims.push({k:'年级', v:grd, note:grdNote, hard:true});
+
+    var fee = 0, feeNote = '';
+    var r = c.netRate;
+    if(!o.rate){
+      fee = 40; feeNote = '没写课时费，得先谈';
+    } else if(r >= cfg.idealRate){
+      fee = 100; feeNote = '净时薪 ' + Math.round(r) + ' 元，超过你的理想值';
+    } else if(r >= cfg.minRate){
+      fee = 60 + 40 * (r - cfg.minRate) / Math.max(1, cfg.idealRate - cfg.minRate);
+      feeNote = '净时薪 ' + Math.round(r) + ' 元，在底线和理想之间';
+    } else {
+      fee = Math.max(0, 55 * r / Math.max(1, cfg.minRate));
+      feeNote = '净时薪只有 ' + Math.round(r) + ' 元，低于底线 ' + cfg.minRate + ' 元';
+    }
+    dims.push({k:'课时费', v:fee, note:feeNote});
+
+    var dist = 0, distNote = '';
+    if(o.isOnline){
+      if(cfg.online){ dist = 100; distNote = '线上课，零通勤'; }
+      else { dist = 0; distNote = '你不接线上课'; }
+    } else if(!o.location){
+      dist = 45; distNote = '没写地点，距离未知';
+    } else if(!c.commuteKnown){
+      dist = 55; distNote = '这个区域没在你列表里，按边界值估算，建议补一条通勤时间';
+    } else if(c.commuteMin <= cfg.maxCommute){
+      dist = 100 - (c.commuteMin / Math.max(1, cfg.maxCommute)) * 45;
+      distNote = '单程约 ' + Math.round(c.commuteMin) + ' 分钟，在你能接受的范围内';
+    } else {
+      dist = Math.max(0, 40 * (1 - (c.commuteMin - cfg.maxCommute) / Math.max(1, cfg.maxCommute)));
+      distNote = '单程约 ' + Math.round(c.commuteMin) + ' 分钟，超过你能接受的 ' + cfg.maxCommute + ' 分钟';
+    }
+    dims.push({k:'距离', v:dist, note:distNote});
+
+    var time = 0, timeNote = '';
+    if(!o.days.length){
+      time = 60; timeNote = '没说星期几，需要确认';
+    } else {
+      var overlap = o.days.filter(function(d){ return cfg.days.indexOf(d) > -1; });
+      if(overlap.length === o.days.length){ time = 100; timeNote = '时间你都能排'; }
+      else if(overlap.length > 0){ time = 55; timeNote = '部分冲突，只有 ' + overlap.map(function(d){ return DAY_NAME[d]; }).join('、') + ' 能排'; }
+      else { time = 0; timeNote = '说要的时间你都没空'; }
+    }
+    dims.push({k:'时间', v:time, note:timeNote, hard:true});
+
+    var reqList = [100], reqNotes = [];
+    if(o.teacherGender && o.teacherGender !== cfg.gender){
+      var soft = /优先/.test(o.raw);
+      reqList.push(soft ? 45 : 0);
+      reqNotes.push('要求' + o.teacherGender + '老师' + (soft ? '（写的是优先，不是硬性）' : '，你填的是' + cfg.gender));
+    }
+    if(/教师资格证|教资/.test(o.raw) && !cfg.cert){
+      reqList.push(0); reqNotes.push('要求教师资格证，你没有');
+    }
+    if(/竞赛/.test(o.raw) && !cfg.comp){
+      reqList.push(0); reqNotes.push('要求竞赛经验，你没有');
+    }
+    if(/(名校|985|211|研究生|博士)/.test(o.raw) && !cfg.elite){
+      reqList.push(0); reqNotes.push('要求名校或高学历，你不满足');
+    }
+    if(cfg.exclude.length){
+      cfg.exclude.forEach(function(k){
+        if(k && o.raw.indexOf(k) > -1){ reqList.push(0); reqNotes.push('命中你排除的类型「' + k + '」'); }
+      });
+    }
+    var req = Math.min.apply(null, reqList);
+    dims.push({k:'要求', v:req, note:reqNotes.length ? reqNotes.join('；') : '没有额外限制', hard:true});
+
+    var W = {'科目':.26, '年级':.20, '课时费':.20, '距离':.16, '时间':.13, '要求':.05};
+    var total = 0;
+    dims.forEach(function(d){ total += d.v * W[d.k]; });
+
+    var blocked = dims.filter(function(d){ return d.hard && d.v === 0; });
+    if(blocked.length) total = total * 0.38;
+    total = Math.round(Math.max(0, Math.min(100, total)));
+
+    var verdict;
+    if(total >= 85) verdict = {cls:'good', label:'高度匹配'};
+    else if(total >= 70) verdict = {cls:'good', label:'值得聊'};
+    else if(total >= 50) verdict = {cls:'warn', label:'一般，看情况'};
+    else verdict = {cls:'bad', label:'不建议接'};
+
+    var notes = [];
+    if(blocked.length){
+      notes.push({t:'bad', s:'硬性不符：' + blocked.map(function(d){ return d.k + '（' + d.note + '）'; }).join('；')});
+    }
+    if(cfg.maxHours > 0){
+      var after = cfg.usedHours + c.totalWeekH;
+      if(after > cfg.maxHours) notes.push({t:'bad', s:'接这单后每周投入约 ' + after.toFixed(1) + ' 小时，超过你设的 ' + cfg.maxHours + ' 小时上限'});
+      else notes.push({t:'good', s:'接这单后每周约 ' + after.toFixed(1) + ' 小时，还在 ' + cfg.maxHours + ' 小时以内'});
+    }
+    if(c.commuteWeekH > 0){
+      notes.push({t: c.commuteWeekH > c.teachWeekH * 0.6 ? 'warn' : 'good',
+        s:'每周上课 ' + c.teachWeekH + ' 小时，路上 ' + c.commuteWeekH.toFixed(1) + ' 小时'});
+    }
+    if(!o.rate) notes.push({t:'warn', s:'报价没写，抢单时要先问价，会慢一步'});
+    if(o.freq >= 2) notes.push({t:'good', s:'每周 ' + o.freq + ' 次，是稳定单'});
+
+    return {dims:dims, total:total, verdict:verdict, blocked:blocked, notes:notes};
+  }
+
+  function genTalks(o, c, m){
+    var sub = o.subjects.length ? o.subjects.join('、') : '这个科目';
+    var g = o.grade ? normGrade(o.grade) : '';
+    var when = o.days.length ? o.days.map(function(d){ return DAY_NAME[d]; }).join('、') : '';
+    if(o.timeOfDay) when = when ? when + ' ' + o.timeOfDay : o.timeOfDay;
+
+    var open = '您好！看到您发的' + g + sub + '需求，我这边比较匹配。\n'
+      + '· 我是' + m.card + '，已经带过 ' + m.count + ' 位学生\n'
+      + (when ? '· ' + when + '我都能排' : '· 时间上我可以配合')
+      + (o.location && !o.isOnline ? '，' + o.location + '过去大概 ' + Math.round(c.commuteMin) + ' 分钟' : '')
+      + '\n'
+      + (o.rate ? '· 课时费 ' + o.rate + ' 元/小时我没问题，一次 ' + c.dur + ' 小时\n' : '')
+      + '方便先聊两句孩子目前的情况吗？我看看具体怎么带。';
+
+    var quote = '关于课时费，' + sub + (g ? '（' + g + '）' : '') + '我这边是 ' + (o.rate || m.idealRate) + ' 元/小时，'
+      + '一次 ' + c.dur + ' 小时，每周 ' + c.freq + ' 次。\n'
+      + '这个价位包含每次课后的一份简短反馈，以及阶段性的练习规划。\n'
+      + '如果先试课，试课按半价算，两边都觉得合适再定长期。';
+
+    var trial = '要不我们先约一次试课？' + c.dur + ' 小时，我做两件事：\n'
+      + '一是摸清孩子' + sub + '具体卡在哪些章节，二是给您一份后续的提升节奏。\n'
+      + '试课不满意不用付费，也不耽误您继续找。您看这周' + (when || '哪天') + '方便吗？';
+
+    return [
+      {title:'抢单开场（第一时间发）', body:open},
+      {title:'谈课时费', body:quote},
+      {title:'约试课', body:trial}
+    ];
+  }
+
+  function colorOf(v){
+    if(v >= 80) return 'var(--good)';
+    if(v >= 55) return 'var(--warn)';
+    return 'var(--bad)';
+  }
+
+  function stat(k, v, u){
+    return '<div class="st"><div class="k">' + k + '</div><div class="v">' + v + '<small>' + u + '</small></div></div>';
+  }
+
+  var cache = [];
+
+  function renderDetail(o, c, m, mt, total, aiInfo){
+    var out = document.getElementById('out');
+    var h = '';
+
+    if(total > 1) h += '<div class="back" id="backBtn">← 返回列表（共 ' + total + ' 条）</div>';
+
+    h += '<div class="result-head"><div>';
+    h += '<span class="badge ' + mt.verdict.cls + '">' + mt.verdict.label + '</span>';
+    h += '<div class="big-num"><span class="n" style="color:' + colorOf(mt.total) + '">' + mt.total + '</span><span class="u">% 匹配</span></div>';
+    h += '</div>';
+
+    h += '<div style="text-align:right;font-size:12.5px;color:var(--faint);line-height:1.7">';
+    h += esc(o.grade ? normGrade(o.grade) : '年级未写') + ' · ' + esc(o.subjects.join('、') || '科目未写') + '<br>';
+    h += esc(o.rate ? o.rate + ' 元/时' : '价格未写') + ' · ' + (o.isOnline ? '线上' : esc(o.location || '地点未写'));
+    h += '</div></div>';
+
+    h += '<div class="match-track"><i style="width:' + mt.total + '%;background:' + colorOf(mt.total) + '"></i></div>';
+
+    if(aiInfo){
+      var cls = aiInfo === 'loading' ? ' loading' : (aiInfo === 'fail' ? ' bad' : '');
+      var atxt;
+      if(aiInfo === 'loading') atxt = 'AI 正在补全缺失的字段，匹配度稍后更新';
+      else if(aiInfo === 'fail') atxt = 'AI 没连上或调用失败，当前是纯规则的结果';
+      else if(aiInfo === 'none') atxt = 'AI 看过一遍，没发现更多可用信息';
+      else atxt = 'AI 补全了：' + aiInfo.join('、') + '，匹配度已重算';
+      h += '<div class="ai-note' + cls + '"><span class="ai-dot"></span><span>' + esc(atxt) + '</span></div>';
+    }
+
+    h += '<div class="dims">';
+    mt.dims.forEach(function(d){
+      var v = Math.round(d.v);
+      h += '<div><div class="dim-h"><span class="k">' + d.k + '</span><span class="v" style="color:' + colorOf(d.v) + '">' + v + '</span></div>';
+      h += '<div class="bar"><i style="width:' + v + '%;background:' + colorOf(d.v) + '"></i></div>';
+      h += '<div class="dim-n">' + esc(d.note) + '</div></div>';
+    });
+    h += '</div>';
+
+    if(o.aiExtra){
+      h += '<div class="sec-t">AI 读到的额外信息</div>';
+      h += '<div class="li"><span class="d good"></span><span>' + esc(o.aiExtra) + '</span></div>';
+    }
+
+    if(mt.notes.length){
+      h += '<div class="sec-t">补充判断</div>';
+      mt.notes.forEach(function(n){
+        h += '<div class="li"><span class="d ' + n.t + '"></span><span>' + esc(n.s) + '</span></div>';
+      });
+    }
+
+    h += '<div class="sec-t">这单的钱和时间</div><div class="stats">';
+    h += stat('每周收入', Math.round(c.netWeek), ' 元');
+    h += stat('净时薪', Math.round(c.netRate), ' 元');
+    h += stat('每周上课', c.teachWeekH, ' 小时');
+    h += stat('每周路上', c.commuteWeekH.toFixed(1), ' 小时');
+    h += stat('月净收入', Math.round(c.month), ' 元');
+    h += '</div>';
+
+    var talks = genTalks(o, c, m);
+    h += '<div class="sec-t">可以直接发的话术</div>';
+    talks.forEach(function(t, i){
+      h += '<div class="talk"><div class="talk-h"><span class="talk-t">' + esc(t.title) + '</span>';
+      h += '<button class="btn-ghost copy" data-i="' + i + '">复制</button></div>';
+      h += '<div class="talk-b">' + esc(t.body) + '</div></div>';
+    });
+
+    out.innerHTML = h;
+
+    out.querySelectorAll('.copy').forEach(function(btn){
+      btn.addEventListener('click', function(){ copyText(talks[+btn.getAttribute('data-i')].body, btn); });
+    });
+    var back = document.getElementById('backBtn');
+    if(back) back.addEventListener('click', renderList);
+  }
+
+  function renderList(){
+    var out = document.getElementById('out');
+    if(!cache.length) return;
+
+    var h = '<div class="panel-title" style="margin-bottom:2px"><span>按匹配度排序 · 共 ' + cache.length + ' 条</span><span>点一条看详情</span></div>';
+    cache.forEach(function(item, i){
+      var o = item.o, mt = item.mt, tags = [];
+      if(mt.blocked.length) tags.push('<span class="tag bad">硬性不符</span>');
+      if(item.c.netRate > 0) tags.push('<span class="tag">净时薪 ' + Math.round(item.c.netRate) + '</span>');
+      if(o.isOnline) tags.push('<span class="tag good">线上</span>');
+      if(o.days.length) tags.push('<span class="tag">' + o.days.map(function(d){ return DAY_NAME[d]; }).join('') + '</span>');
+
+      h += '<div class="rank-item" data-i="' + i + '">';
+      h += '<div class="rank-score"><div class="n" style="color:' + colorOf(mt.total) + '">' + mt.total + '</div><div class="u">匹配</div></div>';
+      h += '<div class="rank-body"><div class="rank-title">' + esc((o.grade ? normGrade(o.grade) : '?') + ' ' + (o.subjects.join('、') || '?')) + '</div>';
+      h += '<div class="rank-sub">' + esc(o.raw) + '</div>';
+      h += '<div class="rank-tags">' + tags.join('') + '</div></div></div>';
+    });
+    out.innerHTML = h;
+
+    out.querySelectorAll('.rank-item').forEach(function(el){
+      el.addEventListener('click', function(){
+        var item = cache[+el.getAttribute('data-i')];
+        openDetail(item, cache.length);
+      });
+    });
+  }
+
+  function copyText(text, btn){
+    var done = function(){
+      var old = btn.textContent;
+      btn.textContent = '已复制';
+      setTimeout(function(){ btn.textContent = old; }, 1400);
+    };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done, function(){ fb(text, done); });
+    } else fb(text, done);
+  }
+  function fb(text, cb){
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); cb(); } catch(e){}
+    document.body.removeChild(ta);
+  }
+
+  function buildTogs(el, opts, key, multi){
+    el.innerHTML = '';
+    opts.forEach(function(o){
+      var val = typeof o === 'string' ? o : o.v;
+      var label = typeof o === 'string' ? o : o.l;
+      var span = document.createElement('span');
+      span.className = 'tog';
+      span.textContent = label;
+      span.setAttribute('data-v', val);
+      span.addEventListener('click', function(){
+        if(multi){
+          var arr = me[key];
+          var i = arr.indexOf(val);
+          if(i > -1) arr.splice(i,1); else arr.push(val);
+          span.classList.toggle('on');
+        } else {
+          me[key] = val;
+          Array.prototype.forEach.call(el.children, function(c){ c.classList.remove('on'); });
+          span.classList.add('on');
+        }
+        persist(); renderSummary();
+      });
+      el.appendChild(span);
+    });
+  }
+
+  function areasToStr(a){
+    return Object.keys(a).map(function(k){ return k + ':' + a[k]; }).join(', ');
+  }
+  function parseAreas(s){
+    var out = {};
+    (s || '').split(/[,，;；\n]/).forEach(function(part){
+      part = part.trim();
+      if(!part) return;
+      var mm = part.split(/[:：]/);
+      var name = (mm[0] || '').trim();
+      var min = parseFloat(mm[1]);
+      if(name) out[name] = isNaN(min) ? 30 : min;
+    });
+    return out;
+  }
+
+  function fillForm(){
+    document.getElementById('fAreas').value = areasToStr(me.areas);
+    document.getElementById('fMaxCommute').value = me.maxCommute;
+    document.getElementById('fFare').value = me.fare;
+    document.getElementById('fMinRate').value = me.minRate;
+    document.getElementById('fIdealRate').value = me.idealRate;
+    document.getElementById('fMaxHours').value = me.maxHours;
+    document.getElementById('fUsedHours').value = me.usedHours;
+    document.getElementById('fExclude').value = Array.isArray(me.exclude) ? me.exclude.join(', ') : me.exclude;
+    document.getElementById('fCount').value = me.count;
+    document.getElementById('fCard').value = me.card;
+  }
+
+  function readForm(){
+    me.areas = parseAreas(document.getElementById('fAreas').value);
+    me.maxCommute = +document.getElementById('fMaxCommute').value || 0;
+    me.fare = +document.getElementById('fFare').value || 0;
+    me.minRate = +document.getElementById('fMinRate').value || 0;
+    me.idealRate = +document.getElementById('fIdealRate').value || 0;
+    me.maxHours = +document.getElementById('fMaxHours').value || 0;
+    me.usedHours = +document.getElementById('fUsedHours').value || 0;
+    me.exclude = document.getElementById('fExclude').value.split(/[,，]/).map(function(s){ return s.trim(); }).filter(Boolean);
+    me.count = document.getElementById('fCount').value || '0';
+    me.card = document.getElementById('fCard').value || 'XX大学 · 数学系 · 大三';
+    persist(); renderSummary();
+  }
+
+  function renderSummary(){
+    var t = [];
+    t.push(me.subjects.join('/') || '未设科目');
+    t.push(me.grades.length ? (me.grades.length > 1 ? me.grades[0] + '~' + me.grades[me.grades.length-1] : me.grades[0]) : '未设年级');
+    var ar = Object.keys(me.areas);
+    if(ar.length) t.push(ar.join('/'));
+    t.push('底线 ' + me.minRate + ' 元');
+    t.push('周' + me.days.map(function(d){ return DAY_NAME[d].replace('周',''); }).join(''));
+    document.getElementById('pSummary').textContent = t.join('　·　');
+  }
+
+  function persist(){
+    try { localStorage.setItem('tutor-match-v2', JSON.stringify(me)); } catch(e){}
+  }
+  function restore(){
+    try {
+      var s = JSON.parse(localStorage.getItem('tutor-match-v2') || 'null');
+      if(s && typeof s === 'object'){
+        Object.keys(DEFAULT_ME).forEach(function(k){ if(s[k] !== undefined) me[k] = s[k]; });
+      }
+    } catch(e){}
+    me.days = (me.days || []).map(Number);
+    if(!Array.isArray(me.exclude)) me.exclude = String(me.exclude || '').split(/[,，]/).filter(Boolean);
+  }
+
+  function run(){
+    var raw = document.getElementById('input').value.trim();
+    if(!raw) return;
+    readForm();
+
+    var lines = splitOrders(raw);
+    if(!lines.length) return;
+
+    cache = lines.map(function(line){
+      var o = parseOrder(line);
+      var c = computeCost(o, me);
+      return {o:o, c:c, mt:computeMatch(o, c, me)};
+    }).sort(function(a,b){ return b.mt.total - a.mt.total; });
+
+    if(cache.length === 1) openDetail(cache[0], 1);
+    else renderList();
+  }
+
+  var SAMPLES = [
+    '【海淀】初二数学，女老师优先，每周2次，每次2小时，200元/小时，地铁4号线人民大学站，月结',
+    '求高一物理老师，线上授课，每周1次，每次1.5小时，150/小时，希望有竞赛经验',
+    '朝阳区小学三年级全科辅导，每周三次，每次1.5小时，一次300，需要女老师，晚上6点后',
+    '西城区 初三 英语冲刺 每周日 每次2小时 300元/小时 地铁2号线积水潭站 家长可接送',
+    '高二化学 一周两次 一次两小时 150元一次 周末 海淀黄庄'
+  ];
+
+  var ai = {enabled:false};
+  var current = null;
+
+  function initAi(){
+    fetch('/ai-status').then(function(r){ return r.json(); }).then(function(d){
+      ai.enabled = !!(d && d.enabled);
+      if(ai.enabled && current && !current.o._aiTried && missingFields(current.o).length){
+        openDetail(current, cache.length || 1);
+      }
+    }).catch(function(){});
+  }
+
+  function missingFields(o){
+    var miss = [];
+    if(!o.grade) miss.push('年级');
+    if(!o.subjects.length) miss.push('科目');
+    if(!o.freq) miss.push('频次');
+    if(!o.duration) miss.push('单次时长');
+    if(!o.rate) miss.push('课时费');
+    return miss;
+  }
+
+  function applyAi(o, d){
+    var filled = [];
+    if(!o.grade && d.grade){ o.grade = d.grade; filled.push('年级'); }
+    if(!o.subjects.length && d.subjects && d.subjects.length){ o.subjects = d.subjects; filled.push('科目'); }
+    if(!o.freq && d.freq){ o.freq = d.freq; filled.push('频次'); }
+    if(!o.duration && d.duration){ o.duration = d.duration; filled.push('单次时长'); }
+    if(!o.rate && d.rate){ o.rate = d.rate; filled.push('课时费'); }
+    if(!o.location && d.location){ o.location = d.location; if(/线上|网课/.test(d.location)) o.isOnline = true; }
+    if((!o.days || !o.days.length) && d.days && d.days.length){ o.days = d.days; filled.push('时间'); }
+    if(!o.timeOfDay && d.timeOfDay) o.timeOfDay = d.timeOfDay;
+    if(!o.teacherGender && d.teacherGender) o.teacherGender = d.teacherGender;
+    if(!o.settle && d.settle) o.settle = d.settle;
+    if(d.isOnline) o.isOnline = true;
+    if(d.extra) o.aiExtra = d.extra;
+    return filled;
+  }
+
+  function fetchAi(item, total){
+    var o = item.o;
+    if(o._aiTried) return;
+    o._aiTried = true;
+    fetch('/parse', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({text: o.raw})
+    }).then(function(r){ return r.json(); }).then(function(res){
+      if(!res || !res.ok){
+        renderDetail(o, item.c, me, item.mt, total, 'fail');
+        return;
+      }
+      var filled = applyAi(o, res.data || {});
+      var c = computeCost(o, me);
+      var mt = computeMatch(o, c, me);
+      item.c = c;
+      item.mt = mt;
+      o._aiFilled = filled;
+      renderDetail(o, c, me, mt, total, filled.length ? filled : 'none');
+    }).catch(function(){
+      renderDetail(o, item.c, me, item.mt, total, 'fail');
+    });
+  }
+
+  function openDetail(item, total){
+    var o = item.o;
+    current = item;
+    var miss = ai.enabled ? missingFields(o) : [];
+    if(miss.length && !o._aiTried){
+      renderDetail(o, item.c, me, item.mt, total, 'loading');
+      fetchAi(item, total);
+    } else {
+      renderDetail(o, item.c, me, item.mt, total, o._aiFilled && o._aiFilled.length ? o._aiFilled : undefined);
+    }
+  }
+
+  function splitOrders(raw){
+    var lines = raw.split(/\n+/).map(function(s){ return s.trim(); }).filter(function(s){ return s.length >= 8; });
+    if(lines.length <= 1) return lines;
+    var strong = /(年级|初[一二三]|高[一二三]|小[一二三四五六]|数学|语文|英语|物理|化学|生物)/;
+    var allLike = lines.every(function(l){ return strong.test(l); });
+    return allLike ? lines : [raw.replace(/\n+/g, ' ')];
+  }
+
+  var toastTimer = null;
+  function toast(msg){
+    var el = document.getElementById('toast');
+    if(!el){
+      el = document.createElement('div');
+      el.id = 'toast';
+      el.className = 'toast';
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ el.classList.remove('show'); }, 2400);
+  }
+
+  function readClipboardAndAnalyze(){
+    if(!navigator.clipboard || !navigator.clipboard.readText){
+      toast('这个浏览器读不了剪贴板，长按输入框粘贴即可');
+      return;
+    }
+    navigator.clipboard.readText().then(function(t){
+      if(!t || !t.trim()){ toast('剪贴板是空的'); return; }
+      document.getElementById('input').value = t.trim();
+      run();
+    }).catch(function(){
+      toast('没有剪贴板权限，长按输入框手动粘贴');
+    });
+  }
+
+  var live = {on:false, seq:0};
+
+  function initLive(){
+    fetch('/latest').then(function(r){ return r.json(); }).then(function(d){
+      live.on = true;
+      live.seq = d.seq;
+      var bar = document.getElementById('liveBar');
+      bar.style.display = 'flex';
+      bar.classList.add('on');
+      if(d.text){
+        document.getElementById('input').value = d.text;
+        document.getElementById('liveText').textContent = '监听中 · 已显示最近收到的一条';
+        run();
+      }
+      poll();
+    }).catch(function(){});
+  }
+
+  function poll(){
+    if(!live.on) return;
+    fetch('/latest').then(function(r){ return r.json(); }).then(function(d){
+      if(typeof d.seq === 'number' && d.seq !== live.seq && d.text){
+        live.seq = d.seq;
+        applyIncoming(d.text);
+      }
+      setTimeout(poll, 400);
+    }).catch(function(){
+      live.on = false;
+      var bar = document.getElementById('liveBar');
+      bar.classList.remove('on');
+      document.getElementById('liveText').textContent = '监听已断开 · 刷新页面可重新连接';
+    });
+  }
+
+  function applyIncoming(text){
+    document.getElementById('input').value = text;
+    var out = document.getElementById('out');
+    out.classList.remove('flash');
+    void out.offsetWidth;
+    out.classList.add('flash');
+    var t = new Date();
+    var hh = ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2) + ':' + ('0' + t.getSeconds()).slice(-2);
+    document.getElementById('liveText').textContent = '刚收到一条 · ' + hh;
+    run();
+  }
+
+  function textFromUrl(){
+    var raw = '';
+    if(location.hash && location.hash.indexOf('#t=') === 0){
+      raw = location.hash.slice(3);
+    } else {
+      var m = location.search.match(/[?&]t=([^&]*)/);
+      if(m) raw = m[1];
+    }
+    if(!raw) return '';
+    try { return decodeURIComponent(raw.replace(/\+/g, ' ')); } catch(e){ return raw; }
+  }
+
+  function init(){
+    restore();
+
+    buildTogs(document.getElementById('tSubjects'), SUBJECTS, 'subjects', true);
+    buildTogs(document.getElementById('tGrades'), GRADE_OPTS, 'grades', true);
+    buildTogs(document.getElementById('tGender'), [{v:'男',l:'我是男老师'},{v:'女',l:'我是女老师'}], 'gender', false);
+
+    var daysEl = document.getElementById('tDays');
+    daysEl.innerHTML = '';
+    [[1,'周一'],[2,'周二'],[3,'周三'],[4,'周四'],[5,'周五'],[6,'周六'],[0,'周日']].forEach(function(d){
+      var span = document.createElement('span');
+      span.className = 'tog' + (me.days.indexOf(d[0]) > -1 ? ' on' : '');
+      span.textContent = d[1];
+      span.addEventListener('click', function(){
+        var i = me.days.indexOf(d[0]);
+        if(i > -1) me.days.splice(i,1); else me.days.push(d[0]);
+        span.classList.toggle('on');
+        persist(); renderSummary();
+      });
+      daysEl.appendChild(span);
+    });
+
+    Array.prototype.forEach.call(document.getElementById('tSubjects').children, function(el){
+      el.classList.toggle('on', me.subjects.indexOf(el.getAttribute('data-v')) > -1);
+    });
+    Array.prototype.forEach.call(document.getElementById('tGrades').children, function(el){
+      el.classList.toggle('on', me.grades.indexOf(el.getAttribute('data-v')) > -1);
+    });
+    Array.prototype.forEach.call(document.getElementById('tGender').children, function(el){
+      el.classList.toggle('on', me.gender === el.getAttribute('data-v'));
+    });
+
+    document.getElementById('tOnline').classList.toggle('on', !!me.online);
+    document.getElementById('tCert').classList.toggle('on', !!me.cert);
+    document.getElementById('tComp').classList.toggle('on', !!me.comp);
+    document.getElementById('tElite').classList.toggle('on', !!me.elite);
+
+    document.getElementById('tOnline').addEventListener('click', function(){
+      me.online = !me.online; this.classList.toggle('on'); persist(); renderSummary();
+    });
+    [['tCert','cert'],['tComp','comp'],['tElite','elite']].forEach(function(p){
+      document.getElementById(p[0]).addEventListener('click', function(){
+        me[p[1]] = !me[p[1]]; this.classList.toggle('on'); persist();
+      });
+    });
+
+    ['fAreas','fMaxCommute','fFare','fMinRate','fIdealRate','fMaxHours','fUsedHours','fExclude','fCount','fCard']
+      .forEach(function(id){ document.getElementById(id).addEventListener('input', readForm); });
+
+    fillForm();
+    renderSummary();
+
+    document.getElementById('pToggle').addEventListener('click', function(){
+      var p = document.getElementById('pPanel');
+      var open = p.style.display !== 'none';
+      p.style.display = open ? 'none' : 'block';
+      this.textContent = open ? '设条件' : '收起';
+    });
+
+    document.getElementById('go').addEventListener('click', run);
+    document.getElementById('paste').addEventListener('click', readClipboardAndAnalyze);
+    document.getElementById('input').addEventListener('keydown', function(e){
+      if((e.ctrlKey || e.metaKey) && e.key === 'Enter') run();
+    });
+
+    var chips = document.getElementById('samples');
+    SAMPLES.forEach(function(s, i){
+      var b = document.createElement('span');
+      b.className = 'chip';
+      b.textContent = '示例 ' + (i+1);
+      b.addEventListener('click', function(){
+        document.getElementById('input').value = s;
+        run();
+      });
+      chips.appendChild(b);
+    });
+
+    initLive();
+    initAi();
+
+    var pre = textFromUrl();
+    if(pre){
+      document.getElementById('input').value = pre;
+      run();
+    }
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
