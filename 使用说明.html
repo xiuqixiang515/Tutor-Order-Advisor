@@ -6,8 +6,9 @@
 <title>家教接单工具 · Windows 使用说明</title>
 <style>
 :root{
-  --bg:#FBFAF7; --card:#FFFFFF; --line:#E7E5DC; --line-soft:#F0EEE7;
-  --text:#1C1C19; --muted:#66665D; --faint:#8E8E83;
+  --bg:#f5f5f3; --card:#fcfcfb; --line:rgba(26,26,24,.06); --line-soft:rgba(26,26,24,.045);
+  --s2:#f8f8f6; --s3:#f1f1ee; --ink2:#3d3d3a;
+  --text:#1a1a18; --muted:#6b6b63; --faint:#8f8f86;
   --accent:#0F6E56; --accent-soft:#EDF7F2;
   --good:#0F6E56; --good-bg:#EDF7F2;
   --warn:#9A6410; --warn-bg:#FBF3E3;
@@ -16,51 +17,54 @@
 *{box-sizing:border-box;margin:0;padding:0}
 body{
   background:var(--bg);color:var(--text);
-  font:15px/1.85 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",serif;
+  font:400 15px/1.85 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",serif;
   -webkit-font-smoothing:antialiased;
+  text-wrap:pretty;
 }
 .wrap{max-width:740px;margin:0 auto;padding:56px 26px 96px}
 
 .kicker{font-size:12px;letter-spacing:.14em;color:var(--faint);font-family:-apple-system,sans-serif}
-h1{font-size:27px;font-weight:600;letter-spacing:-.01em;line-height:1.35;margin-top:12px}
+h1{font-size:27px;font-weight:600;letter-spacing:-.01em;line-height:1.35;margin-top:12px;text-wrap:balance}
 .lead{color:var(--muted);font-size:15px;margin-top:14px;line-height:1.8}
 .meta{display:flex;gap:18px;margin-top:20px;padding-bottom:26px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .meta span{font-size:12.5px;color:var(--faint);font-family:-apple-system,sans-serif}
 
-h2{font-size:19px;font-weight:600;margin:52px 0 8px;letter-spacing:-.005em}
+h2{font-size:19px;font-weight:600;margin:52px 0 8px;letter-spacing:-.005em;text-wrap:balance}
 h2 .num{color:var(--faint);font-weight:400;margin-right:10px;font-size:16px}
-h3{font-size:15.5px;font-weight:600;margin:30px 0 10px;color:#2A2A25}
+h3{font-size:15.5px;font-weight:600;margin:30px 0 10px;color:var(--text)}
 h4{font-size:14px;font-weight:600;margin:20px 0 8px;color:var(--muted)}
-p{margin:12px 0;color:#2E2E29}
+p{margin:12px 0;color:var(--text)}
 .sub{font-size:13.5px;color:var(--muted);margin-top:-2px}
 
 ul,ol{margin:12px 0 12px 4px;padding-left:20px}
-li{margin:7px 0;color:#2E2E29}
+li{margin:7px 0;color:var(--text)}
 li::marker{color:var(--faint)}
 strong{font-weight:600}
 code{
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-  font-size:13px;background:#F2F0E9;padding:1.5px 6px;border-radius:4px;color:#3A3A33;
+  font-size:13px;background:var(--s3);padding:1.5px 6px;border-radius:4px;color:var(--text);
+  font-variant-numeric:tabular-nums;
 }
 
 .note{
-  background:var(--card);border:1px solid var(--line);border-radius:10px;
+  background:var(--card);border:0;box-shadow:inset 0 0 0 1px var(--line);border-radius:12px;
   padding:16px 18px;margin:20px 0;font-size:14px;line-height:1.8;
 }
 .note .t{font-size:12px;letter-spacing:.06em;color:var(--faint);margin-bottom:6px;font-family:-apple-system,sans-serif}
-.note.warn{background:var(--warn-bg);border-color:#F0E2C6}
+.note.warn{background:var(--warn-bg)}
 .note.warn .t{color:var(--warn)}
-.note.good{background:var(--good-bg);border-color:#D6EDE3}
+.note.good{background:var(--good-bg)}
 .note.good .t{color:var(--good)}
 
 table{
   width:100%;border-collapse:collapse;margin:20px 0;font-size:13.5px;
   font-family:-apple-system,sans-serif;background:var(--card);
-  border:1px solid var(--line);border-radius:8px;overflow:hidden;
+  border:0;box-shadow:inset 0 0 0 1px var(--line);border-radius:10px;overflow:hidden;
+  font-variant-numeric:tabular-nums;
 }
 th{
   text-align:left;font-weight:600;font-size:12.5px;color:var(--muted);
-  padding:11px 14px;background:#F7F5EF;border-bottom:1px solid var(--line);
+  padding:11px 14px;background:var(--s3);border-bottom:1px solid var(--line);
 }
 td{padding:11px 14px;border-bottom:1px solid var(--line-soft);vertical-align:top;line-height:1.65}
 td code{word-break:break-all;font-size:12px}
@@ -75,7 +79,7 @@ tr:last-child td{border-bottom:0}
 .toc .t{font-size:12px;letter-spacing:.1em;color:var(--faint);margin-bottom:10px;font-family:-apple-system,sans-serif}
 .toc ol{margin:0;padding-left:18px}
 .toc li{margin:5px 0;font-size:13.5px;font-family:-apple-system,sans-serif}
-.toc a{color:#2E2E29;text-decoration:none;border-bottom:1px solid transparent}
+.toc a{color:var(--text);text-decoration:none;border-bottom:1px solid transparent}
 .toc a:hover{color:var(--accent);border-bottom-color:var(--accent)}
 
 .steps{counter-reset:s;list-style:none;padding:0;margin:16px 0}
@@ -90,7 +94,7 @@ tr:last-child td{border-bottom:0}
 
 .faq{border-top:1px solid var(--line-soft);padding-top:16px;margin-top:16px}
 .faq .q{font-weight:600;font-size:14.5px;margin-bottom:6px}
-.faq .a{font-size:14px;color:#3A3A33;margin-bottom:4px}
+.faq .a{font-size:14px;color:var(--ink2);margin-bottom:4px}
 
 .footer{margin-top:64px;padding-top:24px;border-top:1px solid var(--line);font-size:12.5px;color:var(--faint);font-family:-apple-system,sans-serif}
 
@@ -100,6 +104,23 @@ tr:last-child td{border-bottom:0}
   h2{font-size:17.5px;margin-top:44px}
   table{font-size:12.5px}
   th,td{padding:9px 10px}
+}
+
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0b0b0a; --card:#151515;
+    --line:rgba(255,255,255,.07); --line-soft:rgba(255,255,255,.05);
+    --s2:#1a1a19; --s3:#20201e; --ink2:#d3d3ce;
+    --text:#eeeee9; --muted:#a0a099; --faint:#78786f;
+    --accent:#3ea885; --accent-soft:rgba(62,168,133,.13);
+    --good:#4dbd97; --good-bg:rgba(77,189,151,.12);
+    --warn:#d99a3c; --warn-bg:rgba(217,154,60,.13);
+    --bad:#e07070; --bad-bg:rgba(224,112,112,.12);
+  }
+  /* 暗色下字重降一档，防白字发胖 */
+  body{font-weight:350}
+  h1,h2,h3,h4{font-weight:540}
+  strong{font-weight:540}
 }
 </style>
 </head>
@@ -125,6 +146,7 @@ tr:last-child td{border-bottom:0}
     <li><a href="#daily">日常怎么用</a></li>
     <li><a href="#read">结果怎么看</a></li>
     <li><a href="#ai">开启 AI 补全</a></li>
+    <li><a href="#map">用地图算真实通勤</a></li>
     <li><a href="#auto">设成开机自启</a></li>
     <li><a href="#fix">出问题了怎么办</a></li>
     <li><a href="#limit">局限，先说清楚</a></li>
@@ -345,7 +367,7 @@ tr:last-child td{border-bottom:0}
   <li><strong>只认电脑上的剪贴板。</strong>你在手机上复制的消息，不会跑到电脑剪贴板里，工具也就看不见。唯一的例外是开了跨设备同步（见下）。</li>
   <li><strong>它不知道你复制的是哪一条。</strong>你复制什么它就分析什么，没有“只盯某一个群”的能力——因为它压根不读群，只读你交出来的那一条。</li>
   <li><strong>识别靠规则，不是万能的。</strong>格式特别奇怪的单子可能解析不全，比如用很少见的写法描述时间或价格。这时会显示「未说明」，你可以手动补看一眼。</li>
-  <li><strong>不会开机自启</strong>，需要按第 06 节手动设一次。</li>
+  <li><strong>不会开机自启</strong>，需要按第 08 节手动设一次。</li>
 </ul>
 
 <div class="note">
