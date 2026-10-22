@@ -1641,12 +1641,98 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     if(wantMap) fetchCommute(item, total);
   }
 
+  // 单子的「起头行」。群里的单子几乎都是多行的，不能按行切，
+  // 只能找这些标志行的位置来断句。
+  // 转发时经常还带一层引号（"【编号】11601），前导引号要放过。
+  var LEAD = '^[\\s"\'“”‘’*]*';
+  var ORDER_START = new RegExp([
+    '^#{1,3}\\s*\\d',                                       // #1051
+    LEAD + '【?\\s*(?:编号|单号)\\s*】?\\s*[:：]?',            // 【编号】 13205 / 编号：GZ6102226
+    LEAD + '[A-Za-z]{2,4}[-_]?\\d{3,}',                      // XMY-102201 / ZX2130 / DD2007
+    '^(?:广州|佛山|深圳|东莞|珠海|中山)(?=[^\\n]*\\d{4})',      // 广州BY26102206 / 佛山26102202C
+    '^[🎃🍀🌟⭐️]',                                            // 🎃🎃佛山26102202C
+    '^.{0,12}?gz[-_ ]?\\d{6,}'                               // 家教宝贝粥粥: gz10221626
+  ].join('|'), 'i');
+
+  // 分隔线，先统一换成空行，靠它能把一大批单子自然地分开
+  var SEP_LINE = /^[—\-_=*·~\s]{3,}$/;
+
   function splitOrders(raw){
-    var lines = raw.split(/\n+/).map(function(s){ return s.trim(); }).filter(function(s){ return s.length >= 8; });
-    if(lines.length <= 1) return lines;
-    var strong = /(年级|初[一二三]|高[一二三]|小[一二三四五六]|数学|语文|英语|物理|化学|生物)/;
-    var allLike = lines.every(function(l){ return strong.test(l); });
-    return allLike ? lines : [raw.replace(/\n+/g, ' ')];
+    var text = String(raw || '').replace(/\r\n?/g, '\n');
+    text = text.split('\n').map(function(l){
+      return SEP_LINE.test(l.trim()) ? '' : l;
+    }).join('\n').trim();
+    if(!text) return [];
+
+    var blocks = [];
+    text.split(/\n{2,}/).forEach(function(chunk){
+      chunk = chunk.trim();
+      if(!chunk) return;
+      // 块内部再断一次：遇到起头行就切
+      var cur = [];
+      chunk.split('\n').forEach(function(line){
+        var t = line.trim();
+        if(!t) return;
+        if(cur.length && ORDER_START.test(t)){
+          blocks.push(cur.join('\n'));
+          cur = [];
+        }
+        cur.push(t);
+      });
+      if(cur.length) blocks.push(cur.join('\n'));
+    });
+
+    // 起头行有时自己独占一块（前后都是空行），比如 XMY-102201。
+    // 这种块本身不是一条单子，要拿去当下一条的标题。
+    var merged = [];
+    for(var i = 0; i < blocks.length; i++){
+      var b = blocks[i];
+      if(b.indexOf('\n') < 0 && ORDER_START.test(b) && i + 1 < blocks.length){
+        blocks[i + 1] = b + '\n' + blocks[i + 1];
+        continue;
+      }
+      merged.push(b);
+    }
+
+    // 也有人习惯一行一条、每条都把地区年级科目价格写全。
+    // 这种块里每一行自己就是一条完整单子，按行拆回去。
+    // 判据必须同时有「科目/年级」和「价格」，否则正常单子的
+    // 【地址】【时间】行会被误拆开。
+    var selfContained = /((?:[一二三四五六七]年级|初[一二三]|高[一二三]|小[一二三四五六]|数学|语文|英语|物理|化学|生物|全科|作业)).*(\d|\/\s*[hH]|元|块|每小时|课时费|时薪|课酬)/;
+    var flat = [];
+    merged.forEach(function(b){
+      var ls = b.split('\n');
+      if(ls.length > 1 && ls.every(function(l){ return selfContained.test(l); })){
+        ls.forEach(function(l){ flat.push(l); });
+      }else{
+        flat.push(b);
+      }
+    });
+    merged = flat;
+
+    // 至少要像一条家教需求：够长、有中文、有价格或科目/年级线索
+    var looksReal = /(元|块|\/\s*[hH]|每小时|课时费|时薪|课酬|薪资|待遇|报酬|[一二三四五六七]年级|初[一二三]|高[一二三]|小学|数学|语文|英语|物理|化学|生物|地理|历史|政治|奥数|雅思|托福|全科|作业)/;
+    var hasPrice = /(元|块|\/\s*[hH]|每小时|课时费|时薪|课酬|薪资|待遇|报酬|\d+\s*[-~—]?\s*\d*\s*[/每]\s*(?:h|H|小时|次|节))/;
+    var out = merged.filter(function(b){
+      if(b.length < 10) return false;
+      if(!/[\u4e00-\u9fa5]/.test(b)) return false;
+      if(!looksReal.test(b)) return false;
+      // 只剩一行的块基本都是顺路捎带的碎话（「#还需要一个数学老师」），真单子一定带价格
+      if(b.indexOf('\n') < 0 && !hasPrice.test(b)) return false;
+      return true;
+    });
+
+    // 群里转发经常同一条出现两次，去重
+    var seen = {};
+    out = out.filter(function(b){
+      var k = b.replace(/\s+/g, '');
+      if(seen[k]) return false;
+      seen[k] = 1;
+      return true;
+    });
+
+    if(!out.length) return [text.replace(/\n+/g, ' ')];
+    return out;
   }
 
   var toastTimer = null;
