@@ -32,6 +32,10 @@ HTML_PATH = os.path.join(BASE_DIR, "index.html")
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 POLL_INTERVAL = 0.4
 
+# config.json 读失败时的原因，启动横幅会打出来。
+# 用户手写 JSON 少个逗号很常见，静默回退成空配置会让人以为 key 根本没生效。
+config_problem = {"msg": ""}
+
 try:
     sys.stdout.reconfigure(encoding="utf-8")
 except Exception:
@@ -147,9 +151,17 @@ def load_config():
     cfg = {"base_url": "", "api_key": "", "model": "", "timeout": 20, "amap_key": ""}
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            cfg.update(json.load(f))
-    except Exception:
-        pass
+            data = json.load(f)
+        if isinstance(data, dict):
+            cfg.update(data)
+            config_problem["msg"] = ""
+        else:
+            config_problem["msg"] = "最外层应该是 { } 包起来的一组配置，现在拿到的是 %s" % type(data).__name__
+    except FileNotFoundError:
+        config_problem["msg"] = ""
+    except Exception as exc:
+        # 手写 JSON 少个逗号、多一个引号都到这里。静默回退会让用户以为 key 没用。
+        config_problem["msg"] = str(exc)[:160]
     for key, env in (
         ("base_url", "AI_BASE_URL"),
         ("api_key", "AI_API_KEY"),
@@ -540,6 +552,19 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, b'{"ok":false}', "application/json; charset=utf-8")
 
 
+class LocalServer(ThreadingHTTPServer):
+    """只监听本机，且排斥重复绑定。
+
+    http.server 默认 allow_reuse_address=1，Windows 上 SO_REUSEADDR 的语义
+    与 Unix 不同：它允许第二个进程绑定已被监听中的端口。表现是双击两次
+    启动脚本，两个窗口都显示「已启动 · 8791」，请求却随机落到其中一个，
+    /latest 的 seq 各算各的，页面就会时灵时不灵。这里改成独占。
+    """
+
+    allow_reuse_address = False
+    daemon_threads = True
+
+
 def main():
     if not IS_WIN:
         print("× 这个程序只能跑在 Windows 上（读剪贴板用的是 Win32 API）。")
@@ -554,7 +579,7 @@ def main():
     port = 0
     for candidate in range(8791, 8801):
         try:
-            server = ThreadingHTTPServer(("127.0.0.1", candidate), Handler)
+            server = LocalServer(("127.0.0.1", candidate), Handler)
             port = candidate
             break
         except OSError:
@@ -572,12 +597,16 @@ def main():
     print("  用法   在微信里选中消息 → 右键复制")
     print("         页面会自动出匹配结果")
     cfg = load_config()
-    if ai_enabled():
+    if config_problem["msg"]:
+        print("  配置  config.json 读不出来，已按「全空」处理")
+        print("        原因：%s" % config_problem["msg"])
+        print("        检查一下引号和逗号，或者直接删掉这个文件重来")
+    if cfg["base_url"] and cfg["api_key"] and cfg["model"]:
         print("  AI     已开启（%s）· 缺失字段会自动补全" % cfg["model"])
     else:
         print("  AI     未配置 · 只用规则解析")
         print("         想开启就在同目录建 config.json，参考 config.example.json")
-    if amap_enabled():
+    if cfg["amap_key"]:
         print("  地图   高德已配置 · 按真实通勤时间算距离")
     else:
         print("  地图   未配置 · 距离按你手填的区域分钟数算")

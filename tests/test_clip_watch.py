@@ -7,7 +7,9 @@
 
 import json
 import os
+import shutil
 import sys
+import tempfile
 import threading
 import unittest
 import urllib.error
@@ -17,6 +19,24 @@ from http.server import ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import clip_watch as cw  # noqa: E402
+
+# 整个测试模块都把配置指向临时目录。
+# 否则贡献者本地那份真实 config.json（可能是配置好的 AI / 高德 Key）会被读进来，
+# 让「没配 key 时应干净失败」这类用例直接失败。
+_REAL_CONFIG_PATH = cw.CONFIG_PATH
+_TMP_DIR = None
+
+
+def setUpModule():
+    global _TMP_DIR
+    _TMP_DIR = tempfile.mkdtemp(prefix="cw-tests-")
+    cw.CONFIG_PATH = os.path.join(_TMP_DIR, "config.json")
+
+
+def tearDownModule():
+    cw.CONFIG_PATH = _REAL_CONFIG_PATH
+    if _TMP_DIR:
+        shutil.rmtree(_TMP_DIR, ignore_errors=True)
 
 
 class TestLooksLikeOrder(unittest.TestCase):
@@ -73,6 +93,10 @@ class TestConfig(unittest.TestCase):
         self._env = {}
         for key in ("AI_BASE_URL", "AI_API_KEY", "AI_MODEL", "AMAP_KEY"):
             self._env[key] = os.environ.pop(key, None)
+        # 配置路径已由 setUpModule 指到临时目录，这里只要保证各用例从「无文件」开始
+        if os.path.exists(cw.CONFIG_PATH):
+            os.remove(cw.CONFIG_PATH)
+        cw.config_problem["msg"] = ""
 
     def tearDown(self):
         for key, val in self._env.items():
@@ -80,6 +104,12 @@ class TestConfig(unittest.TestCase):
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = val
+        if os.path.exists(cw.CONFIG_PATH):
+            os.remove(cw.CONFIG_PATH)
+
+    def _write(self, text):
+        with open(cw.CONFIG_PATH, "w", encoding="utf-8") as f:
+            f.write(text)
 
     def test_env_overrides(self):
         os.environ["AI_BASE_URL"] = "https://api.example.com/v1"
@@ -104,6 +134,30 @@ class TestConfig(unittest.TestCase):
         self.assertTrue(cw.amap_enabled())
         os.environ.pop("AMAP_KEY", None)
         self.assertFalse(cw.amap_enabled())
+
+    def test_file_read_ok(self):
+        self._write('{"base_url": "https://a/v1", "api_key": "k", "model": "m"}')
+        cfg = cw.load_config()
+        self.assertEqual(cfg["api_key"], "k")
+        self.assertEqual(cw.config_problem["msg"], "")
+
+    def test_no_file_is_not_an_error(self):
+        cfg = cw.load_config()
+        self.assertEqual(cfg["api_key"], "")
+        self.assertEqual(cw.config_problem["msg"], "")
+
+    def test_broken_json_reports_reason(self):
+        # 少一个逗号，这是最常见的手写错误
+        self._write('{"api_key": "k" "model": "m"}')
+        cfg = cw.load_config()
+        self.assertEqual(cfg["api_key"], "")
+        self.assertIn("Expecting", cw.config_problem["msg"])
+
+    def test_non_dict_reports_reason(self):
+        for bad in ("[]", '"hello"', "123"):
+            self._write(bad)
+            cw.load_config()
+            self.assertTrue(cw.config_problem["msg"], "坏配置 %s 应给出原因" % bad)
 
 
 class TestCommute(unittest.TestCase):

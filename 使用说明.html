@@ -356,8 +356,13 @@ tr:last-child td{border-bottom:0}
 </div>
 
 <div class="faq">
+  <div class="q">填了 config.json，AI 却一直显示未配置</div>
+  <div class="a">先看黑色窗口里有没有一行「配置 config.json 读不出来」，有的话后面会跟具体原因，比如 <code>Expecting ',' delimiter: line 3 column 3</code>，意思就是第 3 行少了逗号。JSON 对格式很严格：每行末尾要有逗号（最后一行不要），字符串必须用英文双引号。最省事的办法是删掉 <code>config.json</code>，重新从 <code>config.example.json</code> 复制一份再改。</div>
+</div>
+
+<div class="faq">
   <div class="q">杀毒软件报警</div>
-  <div class="a">脚本会读剪贴板、会开一个本地端口，某些安全软件会敏感。代码是纯 Python 标准库写的，不到 200 行，可以直接打开看。确实不放心就加白名单。</div>
+  <div class="a">脚本会读剪贴板、会开一个本地端口，某些安全软件会敏感。代码是纯 Python 标准库写的，六百来行，可以直接打开看。确实不放心就加白名单。</div>
 </div>
 
 <h2 id="limit"><span class="num">10</span>局限，先说清楚</h2>
