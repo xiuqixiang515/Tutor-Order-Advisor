@@ -336,9 +336,9 @@ class TestHttpServer(unittest.TestCase):
             self.get("/nope")
         self.assertEqual(ctx.exception.code, 404)
 
-    def test_parse_rejects_empty(self):
+    def test_split_rejects_empty(self):
         req = urllib.request.Request(
-            self.base + "/parse",
+            self.base + "/split",
             data=json.dumps({"text": "  "}).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
@@ -347,18 +347,22 @@ class TestHttpServer(unittest.TestCase):
             urllib.request.urlopen(req, timeout=5)
         self.assertEqual(ctx.exception.code, 400)
 
-    def test_parse_returns_json(self):
+    def test_split_returns_starts_and_orders(self):
+        # 没配 AI 时应返回 ok=false 并带 error，而不是崩掉。
+        # （返回结构见 TestAiSplit：ok 时是 {starts, orders}）
         req = urllib.request.Request(
-            self.base + "/parse",
+            self.base + "/split",
             data=json.dumps({"text": "海淀初二数学 200元一次"}).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-        # 没配 AI 时应返回 ok=false 并带 error，而不是崩掉
         self.assertIn("ok", data)
-        if not data["ok"]:
+        if data["ok"]:
+            self.assertIn("starts", data)
+            self.assertIn("orders", data)
+        else:
             self.assertIn("error", data)
 
 

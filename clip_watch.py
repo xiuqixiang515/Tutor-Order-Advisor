@@ -128,23 +128,9 @@ SUBJECTS = [
     "书法", "全科", "理综", "文综",
 ]
 
-AI_PROMPT = """你是家教需求解析器。从用户给出的一条微信群消息里提取家教需求，只输出 JSON。
-
-字段说明：
-- grade: 年级，如 "初二"、"高一"、"小学三年级"。没提到填 null
-- subjects: 科目数组，如 ["数学"]。没提到填 []
-- freq: 每周次数，数字。没提到填 null
-- duration: 每次课的小时数，数字。没提到填 null
-- rate: 每小时课时费，数字。如果只给了单次总价，用总价除以时长换算。都没提到填 null
-- isOnline: 是否线上课，布尔值
-- location: 地点，如 "海淀"、"地铁4号线人民大学站"、"线上"。没提到填 null
-- days: 星期数组，0 是周日，1 到 6 是周一到周六。"周末" 填 [6, 0]。没提到填 []
-- timeOfDay: "上午" 或 "下午" 或 "晚上"，没有填 null
-- teacherGender: 要求老师的性别，"男" 或 "女"，没有填 null
-- settle: 结算方式，如 "月结"，没有填 null
-- extra: 其他值得注意的信息，比如家长的要求、孩子的情况、语气里的暗示，不超过 40 字，没有填 null
-
-注意：推断要克制，消息里没说的就不要编。只输出 JSON，不要任何解释文字。"""
+# 单条补全那条链路（AI_PROMPT / call_ai / /parse）已经删掉：
+# 拆单时 AI 已经把每条单子的字段读过了，再为缺失字段单独调一次
+# 同样的模型、同样的提示词，结果不会有什么不同。
 
 
 def _ssl_context():
@@ -242,12 +228,8 @@ def _ai_json(system_prompt, user_text, max_tokens):
         return None, str(exc)[:220]
 
 
-def call_ai(text):
-    """返回 (dict, None) 或 (None, 错误信息)。"""
-    return _ai_json(AI_PROMPT, text[:3000], 600)
-
-
-# 字段说明。补全和拆单共用一份，免得两边对同一件事有不同说法。
+# 字段说明。AI 拆单时让它顺便把每条单子的字段读出来，
+# 所以字段只在这一处定义——以前还有一份给「单条补全」用的，那套已删。
 FIELDS_DESC = """字段说明（每条单子都要给全这些键，没提到的填 null，空数组填 []）：
 - grade: 年级字符串，如 "初二"、"高一"、"小学三年级"
 - subjects: 科目数组，如 ["数学"]。只认这些科目：%s
@@ -730,22 +712,6 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path = self.path.split("?")[0]
 
-        if path == "/parse":
-            body = self._read_json()
-            if body is None:
-                self._json({"ok": False, "error": "json"}, 400)
-                return
-            text = (body.get("text") or "").strip()
-            if not text:
-                self._json({"ok": False, "error": "empty"}, 400)
-                return
-            data, err = call_ai(text)
-            if data is None:
-                self._json({"ok": False, "error": err})
-            else:
-                self._json({"ok": True, "data": data})
-            return
-
         if path == "/split":
             body = self._read_json()
             if body is None:
@@ -831,9 +797,9 @@ def main():
         print("        原因：%s" % config_problem["msg"])
         print("        检查一下引号和逗号，或者直接删掉这个文件重来")
     if cfg["base_url"] and cfg["api_key"] and cfg["model"]:
-        print("  AI     已开启（%s）· 缺失字段会自动补全" % cfg["model"])
+        print("  AI     已开启（%s）· 拆单和读字段都走它" % cfg["model"])
     else:
-        print("  AI     未配置 · 只用规则解析")
+        print("  AI     未配置 · 拆单和读字段改用规则兜底")
         print("         想开启就在同目录建 config.json，参考 config.example.json")
     if cfg["amap_key"]:
         print("  地图   高德已配置 · 按真实通勤时间算距离")

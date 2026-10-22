@@ -520,14 +520,6 @@ textarea::placeholder{color:var(--faint);opacity:.75}
           <input type="password" id="fAmapKey" placeholder="不填就不用地图">
         </div>
       </div>
-      <div class="fld" style="margin-top:10px">
-        <label>拆单方式</label>
-        <div class="togs" id="tSplit">
-          <span class="tog on" data-v="always">AI 拆单</span>
-          <span class="tog" data-v="rule">只用规则</span>
-        </div>
-        <div class="h"><strong>AI 拆单（默认）</strong>：整段交给模型判断哪儿是一条新单子的开头，顺便把年级、科目、时薪、次数、地点这些字段读出来。规则认不出的写法（「92 以上」「专职女的数学老师」）它也能读。慢两三秒。<br><strong>只用规则</strong>：不调 AI，靠记住的几种起头格式切。快，但遇到没见过的写法会把好几单并成一条，字段也容易漏。AI 没配的时候自动走这条，页面会提示。</div>
-      </div>
       <div class="fld" style="margin-top:14px"><div class="h" style="margin-top:0">填在这里就由浏览器直接调接口，不用启动后台，手机上也一样。四项都留空则用本地 <code>config.json</code>（需要后台开着）。</div></div>
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
         <button class="btn-ghost" id="apiTest" type="button">测试连接</button>
@@ -1160,7 +1152,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
 
   var cache = [];
 
-  function renderDetail(o, c, m, mt, total, aiInfo, mapInfo){
+  function renderDetail(o, c, m, mt, total, mapInfo){
     var out = document.getElementById('out');
     var h = '';
 
@@ -1177,16 +1169,6 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     h += '</div></div>';
 
     h += '<div class="match-track"><i style="width:' + mt.total + '%;background:' + colorOf(mt.total) + '"></i></div>';
-
-    if(aiInfo){
-      var cls = aiInfo === 'loading' ? ' loading' : (aiInfo === 'fail' ? ' bad' : '');
-      var atxt;
-      if(aiInfo === 'loading') atxt = 'AI 正在补全缺失的字段，匹配度稍后更新';
-      else if(aiInfo === 'fail') atxt = 'AI 没连上或调用失败，当前是纯规则的结果';
-      else if(aiInfo === 'none') atxt = 'AI 看过一遍，没发现更多可用信息';
-      else atxt = 'AI 补全了：' + aiInfo.join('、') + '，匹配度已重算';
-      h += '<div class="ai-note block-in d1' + cls + '"><span class="ai-dot"></span><span>' + (ink(atxt, 46) || esc(atxt)) + '</span></div>';
-    }
 
     if(mapInfo){
       var mcls = mapInfo.state === 'loading' ? ' loading' : (mapInfo.state === 'fail' ? ' bad' : '');
@@ -1210,11 +1192,6 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       h += '<div class="dim-n">' + esc(d.note) + '</div></div>';
     });
     h += '</div>';
-
-    if(o.aiExtra){
-      h += '<div class="sec-t">AI 读到的额外信息</div>';
-      h += '<div class="li"><span class="d good"></span><span>' + esc(o.aiExtra) + '</span></div>';
-    }
 
     if(mt.notes.length){
       h += '<div class="sec-t">补充判断</div>';
@@ -1269,10 +1246,9 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     // 否则返回列表会看到「分数变了但位置没动」
     cache.sort(function(a, b){ return b.mt.total - a.mt.total; });
 
-    var mark;
-    if(splitInfo.by === 'ai') mark = '<span class="tag good">AI 拆分</span>';
-    else if(splitInfo.checked) mark = '<span class="tag">规则拆分 · AI 复核过</span>';
-    else mark = '<span class="tag">规则拆分</span>';
+    var mark = splitBy === 'ai'
+      ? '<span class="tag good">AI 拆分</span>'
+      : '<span class="tag">规则拆分</span>';
 
     var pend = bulkPending();
     var right = pend
@@ -1418,17 +1394,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     document.getElementById('fAiKey').value = api.aiKey;
     document.getElementById('fAiModel').value = api.aiModel;
     document.getElementById('fAmapKey').value = api.amapKey;
-    renderSplitMode();
     renderApiHint();
-  }
-
-  function renderSplitMode(){
-    var box = document.getElementById('tSplit');
-    if(!box) return;
-    var cur = api.splitMode || 'always';
-    Array.prototype.forEach.call(box.children, function(c){
-      c.classList.toggle('on', c.getAttribute('data-v') === cur);
-    });
   }
 
   function renderApiHint(){
@@ -1474,9 +1440,6 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       _geoCache = {};
       _routeCache = {};
       cache.forEach(function(it){
-        it.o._aiTried = false;
-        it.o._aiState = null;
-        it.o._aiFilled = null;
         it.o._realCommute = null;
         it.o._mapTried = false;
         it.o._mapNote = null;
@@ -1533,7 +1496,6 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     }
     copyText(JSON.stringify({
       aiBase: api.aiBase, aiKey: api.aiKey, aiModel: api.aiModel, amapKey: api.amapKey,
-      splitMode: api.splitMode || 'always'
     }), document.getElementById('apiExport'));
     document.getElementById('apiHint').textContent = '配置已复制到剪贴板。换设备时在那台点「粘贴配置」，把这段粘进去就行。';
   }
@@ -1607,7 +1569,8 @@ textarea::placeholder{color:var(--faint);opacity:.75}
 
   // 这批单子是谁拆的。要显示出来——不然 AI 静默介入或静默失败，
   // 用户根本无从判断它到底工作没有。
-  var splitInfo = {by:'rule', checked:false};
+  // 只有两种值：'rule' 或 'ai'。AI 是唯一主路径，规则只在它没配上时兜底。
+  var splitBy = 'rule';
 
   function analyzeLines(lines, aiFields){
     // 字段要在排序之前并进去——sort 之后索引就对不上原句了
@@ -1634,7 +1597,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     if(!byRule.length) return;
 
     var seq = ++splitSeq;
-    splitInfo = {by:'rule', checked:false};
+    splitBy = 'rule';
     // 新分析从头看，别沿用上一次的滚动位置
     listScrollY = 0;
     analyzeLines(byRule);
@@ -1649,12 +1612,10 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       }
       return;
     }
-    if(!shouldAskSplit(raw, byRule)) return;
 
     aiSplit(raw).then(function(res){
       if(seq !== splitSeq) return;
       if(!res.ok){
-        splitInfo = {by:'rule', checked:false};
         toast('AI 没能接手拆单：' + res.error + '。先用规则的结果');
         return;
       }
@@ -1665,14 +1626,13 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       }
       var fieldCount = 0;
       (res.orders || []).forEach(function(f){ if(f) fieldCount++; });
+      splitBy = 'ai';
       if(sameSplit(byAi, byRule) && !fieldCount){
-        // 结果没变，但要让用户知道 AI 确实看过一遍
-        splitInfo = {by:'rule', checked:true};
+        // 切法和规则一样，但要让用户知道 AI 确实看过一遍
         if(cache.length > 1) renderList();
         toast('AI 看过一遍，切法和你现在看到的一样');
         return;
       }
-      splitInfo = {by:'ai', checked:true};
       analyzeLines(byAi, res.orders);
       var msg = 'AI 把这段拆成了 ' + byAi.length + ' 条';
       if(fieldCount) msg += '，并读了 ' + fieldCount + ' 条的字段';
@@ -1699,7 +1659,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
   // 优先级：页面里填过就用页面的，没填才回落到本地后台的 config.json。
   // 模型名给个默认值。留空的话 aiDirect() 直接 false，一个请求都不会发，
   // 而输入框里的灰色 deepseek-chat 看起来像已经填了，用户根本意识不到漏了。
-  var api = {aiBase:'', aiKey:'', aiModel:'deepseek-chat', amapKey:'', splitMode:'always'};
+  var api = {aiBase:'', aiKey:'', aiModel:'deepseek-chat', amapKey:''};
   var API_STORE = 'tutor-api-v1';
   var _geoCache = {};
   var _routeCache = {};
@@ -1716,10 +1676,6 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     // 老用户存的是空模型名，升级后会自动被空值覆盖掉默认值。
     // 填的是 DeepSeek 地址却卡在「没填模型名」的话，替他补上。
     if(!api.aiModel && /deepseek/i.test(api.aiBase)) api.aiModel = 'deepseek-chat';
-    // 拆单现在默认全交给 AI。老用户存的 'auto' 是「规则能切就不问 AI」，
-    // 那正是字段读不全、格式一变就切不开的根源，迁成 'always'。
-    // 想回到纯规则，在「设条件 → 拆单方式」里选「只用规则」即可。
-    if(api.splitMode === 'auto') api.splitMode = 'always';
   }
 
   function saveApi(){
@@ -1729,27 +1685,10 @@ textarea::placeholder{color:var(--faint);opacity:.75}
   function aiDirect(){ return !!(api.aiBase && api.aiKey && api.aiModel); }
   function mapDirect(){ return !!api.amapKey; }
 
-  var AI_PROMPT = [
-    '你是家教需求解析器。从用户给出的一条微信群消息里提取家教需求，只输出 JSON。',
-    '',
-    '字段说明：',
-    '- grade: 年级，如 "初二"、"高一"、"小学三年级"。没提到填 null',
-    '- subjects: 科目数组，如 ["数学"]。没提到填 []',
-    '- freq: 每周次数，数字。没提到填 null',
-    '- duration: 每次课的小时数，数字。没提到填 null',
-    '- rate: 每小时课时费，数字。如果只给了单次总价，用总价除以时长换算。都没提到填 null',
-    '- isOnline: 是否线上课，布尔值',
-    '- location: 地点，如 "海淀"、"地铁4号线人民大学站"、"线上"。没提到填 null',
-    '- days: 星期数组，0 是周日，1 到 6 是周一到周六。"周末" 填 [6, 0]。没提到填 []',
-    '- timeOfDay: "上午" 或 "下午" 或 "晚上"，没有填 null',
-    '- teacherGender: 要求老师的性别，"男" 或 "女"，没有填 null',
-    '- settle: 结算方式，如 "月结"，没有填 null',
-    '- extra: 其他值得注意的信息，比如家长的要求、孩子的情况、语气里的暗示，不超过 40 字，没有填 null',
-    '',
-    '注意：推断要克制，消息里没说的就不要编。只输出 JSON，不要任何解释文字。'
-  ].join('\n');
-
-  // 字段说明。补全和拆单共用一份，免得两边对同一件事有不同说法。
+  // 字段说明。AI 拆单时让它顺便把每条单子的字段读出来，
+  // 所以字段只在这一处定义——以前还有一份给「单条补全」用的，
+  // 那套已经删掉：拆单时既然已经读过字段，再为缺失字段单独调一次
+  // 同样的模型、同样的提示词，结果不会有什么不同。
   var FIELDS_DESC = [
     '字段说明（每条单子都要给全这些键，没提到的填 null，空数组填 []）：',
     '- grade: 年级字符串，如 "初二"、"高一"、"小学三年级"',
@@ -1852,10 +1791,8 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     });
   }
 
-  function callAiDirect(text){
-    return aiJsonCall(AI_PROMPT, String(text || '').slice(0, 3000), 600);
-  }
-
+  // 单条补全那条链路（AI_PROMPT / callAiDirect / fetchAi / applyAi）已经删掉：
+  // 拆单时 AI 已经把字段读过了，再为缺失字段单独调一次同样的模型没有意义。
   function amapGet(path, params){
     var q = [];
     Object.keys(params).forEach(function(k){
@@ -2062,9 +1999,8 @@ textarea::placeholder{color:var(--faint);opacity:.75}
 
   function applyAiStatus(on){
     ai.enabled = !!on;
-    if(ai.enabled && current && !current.o._aiTried && missingFields(current.o).length){
-      openDetail(current, cache.length || 1);
-    }
+    // 以前这里会在 AI 状态变可用时重新打开当前详情页，把缺失字段补上。
+    // 单条补全整条链路已经删掉——拆单时 AI 已经读过字段，不需要补第二次。
   }
 
   function initAi(){
@@ -2102,74 +2038,6 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     });
   }
 
-  function aiArg(o){
-    if(o._aiFilled && o._aiFilled.length) return o._aiFilled;
-    return o._aiState || undefined;
-  }
-
-  function missingFields(o){
-    var miss = [];
-    if(!o.grade) miss.push('年级');
-    if(!o.subjects.length) miss.push('科目');
-    if(!o.freq) miss.push('频次');
-    if(!o.duration) miss.push('单次时长');
-    if(!o.rate) miss.push('课时费');
-    return miss;
-  }
-
-  function applyAi(o, d){
-    var filled = [];
-    if(!o.grade && d.grade){ o.grade = d.grade; filled.push('年级'); }
-    if(!o.subjects.length && d.subjects && d.subjects.length){ o.subjects = d.subjects; filled.push('科目'); }
-    if(!o.freq && d.freq){ o.freq = d.freq; filled.push('频次'); }
-    if(!o.duration && d.duration){ o.duration = d.duration; filled.push('单次时长'); }
-    if(!o.rate && d.rate){ o.rate = d.rate; filled.push('课时费'); }
-    if(!o.location && d.location){ o.location = d.location; if(/线上|网课/.test(d.location)) o.isOnline = true; }
-    if((!o.days || !o.days.length) && d.days && d.days.length){ o.days = d.days; filled.push('时间'); }
-    if(!o.timeOfDay && d.timeOfDay) o.timeOfDay = d.timeOfDay;
-    if(!o.teacherGender && d.teacherGender) o.teacherGender = d.teacherGender;
-    if(!o.settle && d.settle) o.settle = d.settle;
-    if(d.isOnline) o.isOnline = true;
-    if(d.extra) o.aiExtra = d.extra;
-    return filled;
-  }
-
-  function fetchAi(item, total){
-    var o = item.o;
-    if(o._aiTried) return;
-    o._aiTried = true;
-    o._aiState = 'loading';
-    var req = aiDirect()
-      ? callAiDirect(o.raw)
-      : fetch('/parse', {
-          method: 'POST',
-          headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({text: o.raw})
-        }).then(function(r){ return r.json(); });
-    req.then(function(res){
-      if(!res || !res.ok){
-        markTried(o, '_aiTried', '_aiTries');
-        o._aiState = 'fail';
-        renderDetail(o, item.c, me, item.mt, total, aiArg(o), o._mapNote);
-        return;
-      }
-      var filled = applyAi(o, res.data || {});
-      o._aiFilled = filled;
-      o._aiState = filled.length ? null : 'none';
-      var c = computeCost(o, me);
-      var mt = computeMatch(o, c, me);
-      item.c = c;
-      item.mt = mt;
-      renderDetail(o, c, me, mt, total, aiArg(o), o._mapNote);
-      // AI 可能补出地点，这时才有条件查地图
-      if(needMap(o)) fetchCommute(item, total);
-    }).catch(function(){
-      markTried(o, '_aiTried', '_aiTries');
-      o._aiState = 'fail';
-      renderDetail(o, item.c, me, item.mt, total, aiArg(o), o._mapNote);
-    });
-  }
-
   // 查询失败后要不要允许重试？
   // 原来的做法是「试过就再也不试」——网络抖一下，这一单就永久停在「未知」，
   // 用户点开多少次都没用。现在改成失败后放开，但同一单最多给 3 次。
@@ -2183,7 +2051,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     if(o._mapTried) return;
     o._mapTried = true;
     o._mapNote = {state:'loading'};
-    renderDetail(o, item.c, me, item.mt, total, aiArg(o), o._mapNote);
+    renderDetail(o, item.c, me, item.mt, total, o._mapNote);
     var req = mapDirect()
       ? amapCommute(me.origin, o.location, o.city)
       : fetch('/commute', {
@@ -2196,7 +2064,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
         markTried(o, '_mapTried', '_mapTries');
         o._mapNote = {state:'fail', text:'地图没查到路线（' + ((res && res.error) || '未知原因') + '），距离按你手填的区域时间算'
           + (o._mapTries < 3 ? '，再点开一次会重试' : '')};
-        renderDetail(o, item.c, me, item.mt, total, aiArg(o), o._mapNote);
+        renderDetail(o, item.c, me, item.mt, total, o._mapNote);
         return;
       }
       var d = res.data || {};
@@ -2214,13 +2082,13 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       var mt = computeMatch(o, c, me);
       item.c = c;
       item.mt = mt;
-      renderDetail(o, c, me, mt, total, aiArg(o), o._mapNote);
+      renderDetail(o, c, me, mt, total, o._mapNote);
     }).catch(function(){
       markTried(o, '_mapTried', '_mapTries');
       o._mapNote = {state:'fail', text: mapDirect()
         ? '地图请求失败，距离按你手填的区域时间算'
         : '连不上本地服务，距离按你手填的区域时间算'};
-      renderDetail(o, item.c, me, item.mt, total, aiArg(o), o._mapNote);
+      renderDetail(o, item.c, me, item.mt, total, o._mapNote);
     });
   }
 
@@ -2339,12 +2207,9 @@ textarea::placeholder{color:var(--faint);opacity:.75}
   function openDetail(item, total){
     var o = item.o;
     current = item;
-    var wantAi = ai.enabled && missingFields(o).length > 0 && !o._aiTried;
     var wantMap = needMap(o);
-    if(wantAi) o._aiState = 'loading';
     if(wantMap) o._mapNote = {state:'loading'};
-    renderDetail(o, item.c, me, item.mt, total, aiArg(o), o._mapNote);
-    if(wantAi) fetchAi(item, total);
+    renderDetail(o, item.c, me, item.mt, total, o._mapNote);
     if(wantMap) fetchCommute(item, total);
   }
 
@@ -2604,15 +2469,6 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     return true;
   }
 
-  // 什么时候去问 AI。默认就是问——规则靠记格式，遇到没见过的写法就切不开，
-  // 而且字段也读不全，这是把它当主路径的原因。
-  // 只有用户在「设条件」里明确选了「只用规则」才不问。
-  function shouldAskSplit(raw, got){
-    if(!ai.enabled) return false;
-    if(api.splitMode === 'rule') return false;
-    return true;
-  }
-
   // AI 的结果值不值得用。这里只防一种情况：把单子拆碎了。
   // 每条单子至少占两行，切出来的条数接近总行数就是这个毛病。
   // 以前还会拿「AI 的条数不到规则一半」当不信任的理由，那是拿规则当基准——
@@ -2766,15 +2622,6 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     document.getElementById('apiTest').addEventListener('click', testApi);
     document.getElementById('apiExport').addEventListener('click', exportApi);
     document.getElementById('apiImport').addEventListener('click', importApi);
-
-    // 拆单方式只是下一次分析才用得上，不用清缓存重算，所以不走 onApiChanged
-    Array.prototype.forEach.call(document.getElementById('tSplit').children, function(c){
-      c.addEventListener('click', function(){
-        api.splitMode = c.getAttribute('data-v') || 'always';
-        saveApi();
-        renderSplitMode();
-      });
-    });
 
     fillForm();
     renderSummary();
