@@ -274,6 +274,30 @@ textarea::placeholder{color:var(--faint);opacity:.75}
 }
 .st .v small{font-weight:var(--w-body);font-size:11px;color:var(--faint);margin-left:2px}
 
+/* 通勤：一条比例条把「上课」和「路上」摊开，上面标出行方式 */
+.cm{background:var(--s1);border-radius:11px;padding:13px 14px}
+.cm-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.cm-mode{
+  font-size:11px;padding:2.5px 7px;border-radius:6px;background:var(--s3);color:var(--muted);
+  font-weight:var(--w-med);letter-spacing:.02em;
+}
+.cm-mode.map{background:var(--good-bg);color:var(--good)}
+.cm-mode.est{background:var(--warn-bg);color:var(--warn)}
+.cm-min{font-size:12.5px;color:var(--muted)}
+.cm-min b{
+  font-size:17px;color:var(--ink);font-weight:var(--w-strong);margin:0 1px;
+  font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;
+}
+.cm-lines{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.65}
+.cm-bar{display:flex;height:7px;border-radius:4px;overflow:hidden;margin-top:12px;background:var(--s3)}
+.cm-bar i{display:block;height:100%;transition:width .5s ease}
+.cm-bar .teach{background:var(--accent)}
+.cm-bar .road{background:var(--warn)}
+.cm-legend{display:flex;justify-content:space-between;font-size:11px;color:var(--faint);margin-top:7px}
+.cm-legend span{display:flex;align-items:center;gap:5px}
+.cm-legend i{width:7px;height:7px;border-radius:2px;display:inline-block}
+.cm-note{font-size:11.5px;color:var(--faint);margin-top:9px;line-height:1.6;padding-top:9px;border-top:1px solid var(--hair)}
+
 .talk{border-radius:11px;padding:14px;background:var(--s2);margin-bottom:9px}
 .talk-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px}
 .talk-t{font-size:12.5px;color:var(--muted)}
@@ -530,6 +554,33 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     '天河','越秀','海珠','荔湾','白云','黄埔','番禺','花都','南沙','从化','增城',
     '福田','南山','罗湖','宝安','龙岗','龙华','盐田','光明','坪山','大鹏',
     '西湖','上城','拱墅','滨江','余杭','萧山','江干','武侯','锦江','青羊','金牛','成华'];
+  // 地址尾缀：有这些字才像地名
+  var ADDR_TAIL = /(半岛|花园|广场|小区|大厦|公寓|华庭|豪庭|雅苑|花苑|家园|新村|苑|园|府|城|湾|里|村|镇|路|街|道|巷|号|附近|地铁站|中心)/;
+  // 反面词：群里带序号的行里混着地址和要求，靠这些把要求那几行排掉。
+  // 「学校」「中心」看着像地名，但「学校在职or专职老师」这种也会命中，所以只留较硬的词。
+  var NOT_ADDR = /(老师|教员|经验|年级|科目|时薪|课酬|薪资|课时|次数|频率|性别|要求|情况|备注|学员|小时|分钟|每次|一次|每周)/;
+
+  // 单子里的地址写法太杂，按可信度从高到低取：
+  //   【地址】天河区华景新城 / 地址：xxx / 学员地址：花都镜湖附近 / 1、恒大御景半岛
+  function extractPlace(t){
+    var lines = String(t || '').split('\n');
+    var best = '';
+    for(var i = 0; i < lines.length; i++){
+      var ln = lines[i].trim();
+      if(!ln) continue;
+      var m = ln.match(/^(?:【\s*(?:地址|地点|位置)\s*】|(?:学员|上课)?地址|上课地点|地点|位置)\s*[:：]?\s*(.+)$/);
+      var cand = m ? m[1] : ln.replace(/^\d+\s*[、.．)）]\s*/, '');
+      cand = cand.replace(/[#＃]/g, ' ').replace(/^[\s·、,，:：]+/, '').replace(/[\s·、,，。;；]+$/, '').trim();
+      if(cand.length < 2 || cand.length > 40) continue;
+      if(NOT_ADDR.test(cand)) continue;
+      if(!ADDR_TAIL.test(cand)) continue;
+      // 带「地址」标签的直接采信
+      if(m) return cand;
+      // 序号行没有标签，多半是一句话，限制长度避免把整行要求当地址
+      if(!best && cand.length <= 24) best = cand;
+    }
+    return best;
+  }
 
   function toNum(s){
     if(s === null || s === undefined) return null;
@@ -628,12 +679,20 @@ textarea::placeholder{color:var(--faint);opacity:.75}
 
     if(m = t.match(/每次\s*([\d.]+|[一两])\s*(?:个)?\s*小时/)) o.duration = toNum(m[1]);
     else if(m = t.match(/([\d.]+)\s*小时\s*\/\s*次/)) o.duration = parseFloat(m[1]);
-    else if(m = t.match(/(?:一次|每次|每节)\s*([\d.]+|[一二两三四])\s*(?:个)?\s*小时/)) o.duration = toNum(m[1]);
-    else if(m = t.match(/([\d.]+)\s*(?:个)?\s*小时/)) o.duration = parseFloat(m[1]);
+    else if(m = t.match(/(?:一次|每次|每节)\s*([\d.]+|[一二两三四])\s*(?:个)?\s*(?:小时|h|H)/)) o.duration = toNum(m[1]);
+    else if(m = t.match(/([\d.]+)\s*(?:个)?\s*(?:小时|h|H)(?![a-zA-Z])/)) o.duration = parseFloat(m[1]);
 
-    if(m = t.match(/(\d+)\s*(?:元|块|rmb)?\s*(?:\/|每)\s*(?:小时|h|时|课时|节)/i)) o.rate = parseInt(m[1],10);
-    else if(m = t.match(/(?:时薪|每小时|一小时|课时费)\s*(?:为|是|：|:)?\s*(\d+)/)) o.rate = parseInt(m[1],10);
-    else if(m = t.match(/(\d+)\s*(?:元|块)\s*(?:一小时|每小时)/)) o.rate = parseInt(m[1],10);
+    // 「260-300/2H」这种是每节课的总价，不是时薪，要除以课时长折回来。
+    // 群里的单子极常见这个写法，漏了会把时薪算成两倍。
+    if(m = t.match(/(\d+)\s*(?:[-~—]\s*(\d+))?\s*\/\s*(\d+(?:\.\d+)?)\s*(?:h|H|小时)/)){
+      var hiPrice = m[2] ? parseInt(m[2], 10) : parseInt(m[1], 10);
+      var hrsPer = parseFloat(m[3]);
+      if(hrsPer > 0 && hiPrice > 0) o.rate = Math.round(hiPrice / hrsPer);
+    }
+
+    if(!o.rate && (m = t.match(/(\d+)\s*(?:元|块|rmb)?\s*(?:\/|每)\s*(?:小时|h|时|课时|节)/i))) o.rate = parseInt(m[1],10);
+    else if(!o.rate && (m = t.match(/(?:时薪|每小时|一小时|课时费)\s*(?:为|是|：|:)?\s*(\d+)/))) o.rate = parseInt(m[1],10);
+    else if(!o.rate && (m = t.match(/(\d+)\s*(?:元|块)\s*(?:一小时|每小时)/))) o.rate = parseInt(m[1],10);
 
     if(!o.rate){
       var total = null;
@@ -643,21 +702,63 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     }
 
     o.isOnline = /(线上|网课|视频授课|在线授课|网络授课|线上辅导)/.test(t);
-    if(m = t.match(/地铁\s*(\d+)\s*号线\s*([\u4e00-\u9fa5]{2,7}?)(?:站|附近|口)/)) o.location = '地铁' + m[1] + '号线 ' + m[2] + '站';
+
+    // 城市名。高德查目的地时用它收窄范围——单子只写「恒大御景半岛」
+    // 这种楼盘名的话，不限定城市会搜到全国同名的小区。
+    if(m = t.match(/(广州|佛山|深圳|东莞|珠海|中山|北京|上海|杭州|成都|武汉|南京|西安|重庆|苏州)/)) o.city = m[1];
+
+    if(m = t.match(/地铁\s*(\d+)\s*号线\s*([\u4e00-\u9fa5]{2,7}?)(?:站|附近|口)/)){
+      o.location = '地铁' + m[1] + '号线 ' + m[2] + '站';
+    }
+
     for(var i=0;i<DISTRICTS.length;i++){
       if(t.indexOf(DISTRICTS[i]) > -1){
         o.district = DISTRICTS[i];
-        if(!o.location) o.location = DISTRICTS[i] + (t.indexOf(DISTRICTS[i] + '区') > -1 ? '区' : '');
         break;
       }
     }
+
+    // 小区 / 楼盘名。只有区名的话只能按你手填的片区时间估，
+    // 拿到具体地点才能让高德算出真实路线和出行方式。
+    if(!o.location) o.location = extractPlace(t);
+    // 连楼盘都没写，退回区名，至少还能用手填的片区时间
+    if(!o.location && o.district){
+      o.location = o.district + (t.indexOf(o.district + '区') > -1 ? '区' : '');
+    }
+
     if(o.isOnline) o.location = '线上';
 
-    var days = [], re = /(?:周|星期)([一二三四五六日天])/g, dm;
-    while((dm = re.exec(t))) days.push(DAY_MAP[dm[1]]);
+    var days = [], re = /(?:周|星期)\s*([一二三四五六日天1-7])(?!\s*次)/g, dm;
+    while((dm = re.exec(t))){
+      var dc = dm[1];
+      // 「周6」写成阿拉伯数字的也不少见；「一周1次」那种后面跟「次」的
+      // 说的是频次不是星期几，靠上面的否定前瞻排除掉
+      days.push(/[1-7]/.test(dc) ? (parseInt(dc, 10) % 7) : DAY_MAP[dc]);
+    }
+
+    // 「周一到周五」这种区间写法要展开，不然只抓到周一和周五两天，
+    // 频次会被算成 2 次，收入差一大截。晚辅单基本都这么写。
+    var rm = t.match(/(?:周|星期)\s*([一二三四五六日天1-7])\s*[至到~—\-－]\s*(?:周|星期)?\s*([一二三四五六日天1-7])/);
+    if(rm){
+      var d1 = /[1-7]/.test(rm[1]) ? (parseInt(rm[1], 10) % 7) : DAY_MAP[rm[1]];
+      var d2 = /[1-7]/.test(rm[2]) ? (parseInt(rm[2], 10) % 7) : DAY_MAP[rm[2]];
+      var i1 = d1 === 0 ? 7 : d1, i2 = d2 === 0 ? 7 : d2;
+      if(i2 > i1){ for(var k = i1; k <= i2; k++) days.push(k % 7); }
+    }
+    if(days.length > 1){
+      days = days.filter(function(d, i){ return days.indexOf(d) === i; })
+                 .sort(function(a, b){ return (a === 0 ? 7 : a) - (b === 0 ? 7 : b); });
+    }
+
     if(!days.length && /周末/.test(t)) days = [6, 0];
     if(!days.length && /工作日/.test(t)) days = [1,2,3,4,5];
     o.days = days;
+
+    // 只写了两个星期几、没说「每周几次」，多半就是一周去两次。
+    // 但「周六周日都可以」这种是任选一天，不能算两次。
+    if(!o.freq && days.length >= 2 && !/(都可以|都行|任选|选一|或|哪天|哪一天|任意)/.test(t)){
+      o.freq = days.length;
+    }
 
     if(m = t.match(/(上午|中午|下午|晚上|傍晚|放学后)/)) o.timeOfDay = m[1];
     if(m = t.match(/(月结|次结|周结|预付|现结|押一付一)/)) o.settle = m[1];
@@ -665,7 +766,26 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     return o;
   }
 
+  // 单子里的年级有「4年级」「四年级」「小四」几种写法，条件里存的却是
+  // 「小学」这种集合名。parseOrder 会把「4年级」原样留下，
+  // 而 gradeSet 只认中文数字，于是被判成「单子没写年级」。
+  // 统一成中文数字再进去判断。
+  var CN_DIGIT = {'1':'一','2':'二','3':'三','4':'四','5':'五','6':'六','7':'七','8':'八','9':'九'};
+
+  function tidyGrade(g){
+    if(!g) return '';
+    g = String(g).replace(/\s+/g, '');
+    var m;
+    if(m = g.match(/^([1-9])\s*年级$/)) return CN_DIGIT[m[1]] + '年级';
+    if(m = g.match(/^小\s*([1-9])$/)) return '小' + CN_DIGIT[m[1]];
+    // 「高1」「初2」这种 parseOrder 会原样取出，同样要转
+    if(m = g.match(/^([初高])\s*([1-9])$/)) return m[1] + CN_DIGIT[m[2]];
+    if(m = g.match(/^([1-9])\s*$/) ) return CN_DIGIT[m[1]] + '年级';
+    return g;
+  }
+
   function gradeSet(g){
+    g = tidyGrade(g);
     if(!g) return [];
     if(g === '小学') return ['小学'];
     if(/^小[一二三四五六]$/.test(g) || /^[一二三四五六]年级$/.test(g)) return ['小学'];
@@ -676,9 +796,10 @@ textarea::placeholder{color:var(--faint);opacity:.75}
   }
 
   function normGrade(g){
+    g = tidyGrade(g);
     if(!g) return '';
     if(/^小/.test(g) || /^[一二三四五六]\s*年级$/.test(g)){
-      var n = g.replace(/[^一二三四五六1-6]/g,'');
+      var n = g.replace(/[^一二三四五六]/g,'');
       return '小学' + (n ? n + '年级' : '');
     }
     return g;
@@ -763,7 +884,9 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     } else if(!o.location){
       dist = 45; distNote = '没写地点，距离未知';
     } else if(!c.commuteKnown){
-      dist = 55; distNote = '这个区域没在你列表里，按边界值估算，建议补一条通勤时间';
+      var locTxt = String(o.location || '');
+      if(locTxt.length > 18) locTxt = locTxt.slice(0, 18) + '…';
+      dist = 55; distNote = '「' + locTxt + '」这个地点还没配通勤时间，按边界值估算';
     } else if(c.commuteMin <= cfg.maxCommute){
       dist = 100 - (c.commuteMin / Math.max(1, cfg.maxCommute)) * 45;
       distNote = '单程约 ' + Math.round(c.commuteMin) + ' 分钟，在你能接受的范围内';
@@ -883,6 +1006,75 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     return '<div class="st"><div class="k">' + k + '</div><div class="v">' + v + '<small>' + u + '</small></div></div>';
   }
 
+  // 通勤这块想在详情里一眼看出「这趟值不值」：
+  // 上面是单程分钟和出行方式，中间一条比例条把上课和路上摊开，
+  // 底下说明这个数字是查的还是估的，免得把估算当成实测。
+  function commuteBlock(o, c){
+    if(o.isOnline){
+      return '<div class="sec-t">通勤</div><div class="cm block-in d2">'
+        + '<div class="cm-head"><span class="cm-mode map">线上</span><span class="cm-min">不用出门</span></div>'
+        + '<div class="cm-lines">每周上课 ' + c.teachWeekH + ' 小时，路上 0 小时</div></div>';
+    }
+
+    var src = c.commuteSrc;   // map 实测 / area 按片区估 / unknown 兜底
+    var badge, cls;
+    if(src === 'map'){ badge = o._commuteMode || '地图'; cls = 'map'; }
+    else if(src === 'area'){ badge = '估算'; cls = 'est'; }
+    else { badge = '未知'; cls = 'est'; }
+
+    var h = '<div class="sec-t">通勤</div><div class="cm block-in d2">';
+    h += '<div class="cm-head"><span class="cm-mode ' + cls + '">' + esc(badge) + '</span>';
+    h += '<span class="cm-min">单程 <b>' + Math.round(c.commuteMin) + '</b> 分钟</span>';
+    if(src === 'map' && o._commuteMeters){
+      h += '<span class="cm-min" style="color:var(--faint)">约 ' + (o._commuteMeters / 1000).toFixed(1) + ' 公里</span>';
+    }
+    h += '</div>';
+
+    // 出行方式明细。只有高德查过才有线路，估的只能给个总量。
+    var det = [];
+    if(o._commuteLines && o._commuteLines.length){
+      det.push('坐 ' + o._commuteLines.join(' → '));
+      if(o._commuteTransfers > 0) det.push('换乘 ' + o._commuteTransfers + ' 次');
+      if(o._commuteWalk > 80) det.push('步行约 ' + Math.round(o._commuteWalk) + ' 米');
+    } else if(src === 'map' && o._commuteMode === '步行'){
+      det.push('走路就能到，不用坐车');
+    } else if(src === 'map' && o._commuteMode === '驾车'){
+      det.push('开车或骑电动车过去');
+    } else if(src === 'area'){
+      det.push('按你填的片区时间估的，没查具体路线');
+    }
+    det.push('每周去 ' + c.freq + ' 次，往返 ' + c.commuteWeekH.toFixed(1) + ' 小时');
+    h += '<div class="cm-lines">' + esc(det.join(' · ')) + '</div>';
+
+    var sum = c.teachWeekH + c.commuteWeekH;
+    var tp = sum > 0 ? (c.teachWeekH / sum * 100) : 100;
+    h += '<div class="cm-bar"><i class="teach" style="width:' + tp.toFixed(1) + '%"></i>'
+       + '<i class="road" style="width:' + (100 - tp).toFixed(1) + '%"></i></div>';
+    h += '<div class="cm-legend">'
+       + '<span><i style="background:var(--accent)"></i>上课 ' + c.teachWeekH + ' 小时</span>'
+       + '<span><i style="background:var(--warn)"></i>路上 ' + c.commuteWeekH.toFixed(1) + ' 小时</span></div>';
+
+    // 这个数字是怎么来的，必须说清楚
+    if(src === 'area'){
+      h += '<div class="cm-note">按「' + esc(o.district || o.location || '未知片区') + '」的片区时间估的。'
+         + '配了高德 Key 能查真实路线、换乘和出行方式</div>';
+    } else if(src === 'unknown'){
+      if(o.location){
+        h += '<div class="cm-note">地点认出来了（' + esc(o.location) + '），但这个片区你没填过通勤时间，'
+           + '先按上限 ' + Math.round(c.commuteMin) + ' 分钟算。'
+           + '配高德 Key 或给这个区补一条时间都行</div>';
+      } else {
+        h += '<div class="cm-note">单子里没认出地点，先按你设的上限 ' + Math.round(c.commuteMin)
+           + ' 分钟兜底。可以在「设条件」里给这个片区补一条通勤时间</div>';
+      }
+    } else if(src === 'map' && o._commuteDest){
+      h += '<div class="cm-note">目的地识别为「' + esc(o._commuteDest) + '」</div>';
+    }
+
+    h += '</div>';
+    return h;
+  }
+
   var cache = [];
 
   function renderDetail(o, c, m, mt, total, aiInfo, mapInfo){
@@ -939,6 +1131,8 @@ textarea::placeholder{color:var(--faint);opacity:.75}
         h += '<div class="li"><span class="d ' + n.t + '"></span><span>' + esc(n.s) + '</span></div>';
       });
     }
+
+    h += commuteBlock(o, c);
 
     h += '<div class="sec-t">这单的钱和时间</div><div class="stats block-in d2">';
     h += stat('每周收入', Math.round(c.netWeek), ' 元');
@@ -1416,13 +1610,30 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     return m > 0 ? m : 0;
   }
 
+  // 从公交方案的 segments 里抽出线路名、换乘次数和步行距离。
+  // 高德给的线路名带方向括号，比如「地铁3号线(番禺广场--天河客运站)」，
+  // 去掉括号只留「地铁3号线」，够看就行。
+  function transitInfo(t){
+    var segs = (t && t.segments) || [];
+    var lines = [], walkM = 0, rides = 0;
+    segs.forEach(function(s){
+      if(s.walking && s.walking.distance) walkM += parseFloat(s.walking.distance) || 0;
+      var bl = ((s.bus || {}).buslines || [])[0];
+      if(bl && bl.name){
+        rides++;
+        lines.push(String(bl.name).replace(/\(.*?\)/g, '').replace(/（.*?）/g, '').trim());
+      }
+    });
+    return {lines:lines, transfers: Math.max(0, rides - 1), walkMeters: Math.round(walkM)};
+  }
+
   function amapRoute(originLoc, destLoc, city){
     var base = {origin: originLoc, destination: destLoc};
     function fromPaths(d){
       var p = ((d.route || {}).paths || [])[0];
       if(!p) return null;
       var m = amapMinutes(p.duration);
-      return m ? {minutes:m, mode:null, meters: Math.round(parseFloat(p.distance) || 0)} : null;
+      return m ? {minutes:m, mode:null, meters: Math.round(parseFloat(p.distance) || 0), lines:[], transfers:0, walkMeters:0} : null;
     }
 
     // 公交优先：家教单同城短途居多，地铁公交是最常见的通勤方式
@@ -1433,8 +1644,12 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       var route = d.route || {};
       var t = (route.transits || [])[0];
       var m = t ? amapMinutes(t.duration) : 0;
-      if(m) return {minutes:m, mode:'公交', meters: Math.round(parseFloat(route.distance) || 0)};
-      return null;
+      if(!m) return null;
+      var info = transitInfo(t);
+      return {
+        minutes:m, mode:'公交', meters: Math.round(parseFloat(route.distance) || 0),
+        lines: info.lines, transfers: info.transfers, walkMeters: info.walkMeters
+      };
     }).catch(function(){ return null; }).then(function(found){
       if(found) return found;
       return amapGet('/v3/direction/walking', base).then(fromPaths).catch(function(){ return null; })
@@ -1446,18 +1661,19 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     });
   }
 
-  function amapCommute(fromText, toText){
+  function amapCommute(fromText, toText, city){
     fromText = String(fromText || '').trim();
     toText = String(toText || '').trim();
     if(!fromText) return Promise.resolve({ok:false, error:'没有填出发点'});
     if(!toText) return Promise.resolve({ok:false, error:'单子里没写地点'});
 
-    var ck = fromText + '|' + toText;
+    var ck = fromText + '|' + toText + '|' + (city || '');
     if(_routeCache.hasOwnProperty(ck)) return Promise.resolve(_routeCache[ck]);
 
     return amapLookup(fromText, '').then(function(origin){
       if(!origin) return {ok:false, error:'找不到出发点「' + fromText.slice(0, 24) + '」'};
-      var scope = origin.city || '';
+      // 目的地优先按单子里写的城市限定，否则同名小区会搜到外地去
+      var scope = city || origin.city || '';
       return amapLookup(toText, scope).then(function(dest){
         if(!dest) return {ok:false, error:'找不到地点「' + toText.slice(0, 24) + '」'};
         return amapRoute(origin.location, dest.location, scope).then(function(found){
@@ -1466,6 +1682,9 @@ textarea::placeholder{color:var(--faint);opacity:.75}
             minutes: found.minutes,
             mode: found.mode,
             meters: found.meters,
+            lines: found.lines || [],
+            transfers: found.transfers || 0,
+            walkMeters: found.walkMeters || 0,
             originName: origin.name || fromText,
             destName: dest.name || toText
           }};
@@ -1597,11 +1816,11 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     o._mapNote = {state:'loading'};
     renderDetail(o, item.c, me, item.mt, total, aiArg(o), o._mapNote);
     var req = mapDirect()
-      ? amapCommute(me.origin, o.location)
+      ? amapCommute(me.origin, o.location, o.city)
       : fetch('/commute', {
           method: 'POST',
           headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({from: me.origin, to: o.location})
+          body: JSON.stringify({from: me.origin, to: o.location, city: o.city || ''})
         }).then(function(r){ return r.json(); });
     req.then(function(res){
       if(!res || !res.ok){
@@ -1612,10 +1831,14 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       var d = res.data || {};
       o._realCommute = d.minutes;
       o._commuteMode = d.mode;
-      o._mapNote = {state:'ok', text:'高德查过：到' + (d.destName || o.location) + ' ' + d.mode
-        + ' ' + d.minutes + ' 分钟'
-        + (d.meters ? '（约 ' + (d.meters / 1000).toFixed(1) + ' 公里）' : '')
-        + '，已按这个重算'};
+      o._commuteLines = d.lines || [];
+      o._commuteTransfers = d.transfers || 0;
+      o._commuteWalk = d.walkMeters || 0;
+      o._commuteMeters = d.meters || 0;
+      o._commuteDest = d.destName || '';
+      // 具体线路放在下面的「通勤」区块里，这里只说一句查到了，不然重复两遍
+      o._mapNote = {state:'ok', text:'高德查到真实路线（' + d.mode + ' ' + d.minutes
+        + ' 分钟），净时薪和距离已按它重算'};
       var c = computeCost(o, me);
       var mt = computeMatch(o, c, me);
       item.c = c;

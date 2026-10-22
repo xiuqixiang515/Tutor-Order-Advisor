@@ -328,10 +328,34 @@ def _seconds_to_minutes(seconds):
     return m if m > 0 else 0
 
 
+def _transit_extra(transit):
+    """把公交方案里的线路名、换乘次数、步行距离抽出来。
+
+    高德给的线路名带方向括号，比如「地铁3号线(番禺广场--天河客运站)」，
+    去掉括号只留「地铁3号线」，够看就行。
+    """
+    lines = []
+    walk_m = 0.0
+    rides = 0
+    for seg in (transit or {}).get("segments") or []:
+        try:
+            walk_m += float((seg.get("walking") or {}).get("distance") or 0)
+        except (TypeError, ValueError):
+            pass
+        buslines = (seg.get("bus") or {}).get("buslines") or []
+        if buslines:
+            name = re.sub(r"[（(].*?[）)]", "", str(buslines[0].get("name") or "")).strip()
+            if name:
+                rides += 1
+                lines.append(name)
+    return {"lines": lines, "transfers": max(0, rides - 1), "walkMeters": int(round(walk_m))}
+
+
 def route_between(origin_loc, dest_loc, city=""):
-    """两个坐标之间的通勤时长，返回 (分钟, 方式, 距离米) 或 None。
+    """两个坐标之间的通勤时长，返回 (分钟, 方式, 距离米, 明细) 或 None。
 
     公交优先，步行和驾车兜底。家教单里同城短途居多，公交/地铁是最常见的通勤方式。
+    明细里带线路名和换乘次数，页面上要显示「坐几号线、换几次」。
     """
     base = {"origin": origin_loc, "destination": dest_loc}
 
@@ -342,7 +366,12 @@ def route_between(origin_loc, dest_loc, city=""):
         if transits:
             minutes = _seconds_to_minutes(transits[0].get("duration"))
             if minutes:
-                return minutes, "公交", int(float(route.get("distance") or 0))
+                return (
+                    minutes,
+                    "公交",
+                    int(float(route.get("distance") or 0)),
+                    _transit_extra(transits[0]),
+                )
     except Exception:
         pass
 
@@ -352,7 +381,7 @@ def route_between(origin_loc, dest_loc, city=""):
         if paths:
             minutes = _seconds_to_minutes(paths[0].get("duration"))
             if minutes:
-                return minutes, "步行", int(float(paths[0].get("distance") or 0))
+                return minutes, "步行", int(float(paths[0].get("distance") or 0)), {}
     except Exception:
         pass
 
@@ -362,7 +391,7 @@ def route_between(origin_loc, dest_loc, city=""):
         if paths:
             minutes = _seconds_to_minutes(paths[0].get("duration"))
             if minutes:
-                return minutes, "驾车", int(float(paths[0].get("distance") or 0))
+                return minutes, "驾车", int(float(paths[0].get("distance") or 0)), {}
     except Exception:
         pass
 
@@ -400,11 +429,14 @@ def commute(origin_text, dest_text, city=""):
         if not found:
             return None, "没查到通勤方案"
 
-        minutes, mode, meters = found
+        minutes, mode, meters, extra = found
         result = {
             "minutes": minutes,
             "mode": mode,
             "meters": meters,
+            "lines": extra.get("lines") or [],
+            "transfers": extra.get("transfers") or 0,
+            "walkMeters": extra.get("walkMeters") or 0,
             "originName": origin.get("name") or origin_text,
             "destName": dest.get("name") or dest_text,
         }
