@@ -326,6 +326,13 @@ tr:last-child td{border-bottom:0}
   <li>收起面板，随便粘一段群消息试，能拆开、字段也读出来了就说明通了。</li>
 </ol>
 <p class="sub">填完就生效并存好了，<strong>不用点任何按钮</strong>。Key 只存在这台设备的浏览器里，不上传。换手机或换电脑时，点「复制配置」把那段文字复制走，到新设备点「粘贴配置」贴进去，不用重填。</p>
+<div class="note warn">
+  <div class="t">Key 是按网址隔离的，这是最容易踩的坑</div>
+  在本地 <code>127.0.0.1:8791</code> 填的那份 Key，打开 <code>xiuqixiang515.github.io</code> 时<strong>读不到</strong>——两者是不同的「源」，浏览器给每个网址各存一份，互不相通。<br><br>
+  表现很有迷惑性：<strong>页面不报错、也不提示，只是静默地按规则跑</strong>，一个请求都不发。于是你在模型厂商的后台看不到任何调用记录，会以为「Key 没配好」或者「程序没调 API」，其实那边压根不知道你用过。<br><br>
+  <strong>换网址就重填一次</strong>，或者用上面的「复制配置 / 粘贴配置」搬过去。<br><br>
+  结果区的标签会一直告诉你 AI 在不在工作：绿色的 <code>AI 拆单 · 模型名</code> 是开着；红色的 <code>AI 未配置 · 走规则，点此填写</code> 就是没配上——<strong>点那个红标签会直接打开面板并跳到 Key 输入框</strong>。
+</div>
 <div class="note">
   <div class="t">填了 Key 却没反应？多半是漏了一项</div>
   地址、Key、模型名<strong>三项齐全</strong>才会生效，少一项就一个请求都不会发。漏的那项会在「接口配置」最底下写明。点「测试连接」能直接确认。

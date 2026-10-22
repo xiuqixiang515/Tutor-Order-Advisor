@@ -1170,6 +1170,8 @@ textarea::placeholder{color:var(--faint);opacity:.75}
 
     h += '<div class="match-track"><i style="width:' + mt.total + '%;background:' + colorOf(mt.total) + '"></i></div>';
 
+    h += '<div style="margin:9px 0 3px">' + aiStateTag() + '</div>';
+
     if(mapInfo){
       var mcls = mapInfo.state === 'loading' ? ' loading' : (mapInfo.state === 'fail' ? ' bad' : '');
       var mtxt = mapInfo.state === 'loading' ? '正在查真实通勤路线，距离和净时薪稍后更新' : mapInfo.text;
@@ -1230,6 +1232,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     out.querySelectorAll('.copy').forEach(function(btn){
       btn.addEventListener('click', function(){ copyText(talks[+btn.getAttribute('data-i')].body, btn); });
     });
+    bindAiStateTag();
     settle(out);
     var back = document.getElementById('backBtn');
     if(back) back.addEventListener('click', renderList);
@@ -1246,9 +1249,9 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     // 否则返回列表会看到「分数变了但位置没动」
     cache.sort(function(a, b){ return b.mt.total - a.mt.total; });
 
-    var mark = splitBy === 'ai'
+    var mark = (splitBy === 'ai'
       ? '<span class="tag good">AI 拆分</span>'
-      : '<span class="tag">规则拆分</span>';
+      : '<span class="tag">规则拆分</span>') + aiStateTag();
 
     var pend = bulkPending();
     var right = pend
@@ -1288,6 +1291,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     });
     var bb = document.getElementById('bulkBtn');
     if(bb) bb.addEventListener('click', bulkCommute);
+    bindAiStateTag();
     settle(out);
     if(listScrollY) window.scrollTo(0, listScrollY);
   }
@@ -1401,7 +1405,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     var el = document.getElementById('apiHint');
     if(!el) return;
     var bits = [];
-    if(aiDirect()) bits.push('AI 已开启（补全和拆单都能用）');
+    if(aiDirect()) bits.push('AI 已开启（拆单和读字段都走它）');
     if(mapDirect()) bits.push('高德已开启');
 
     // 填了两项、漏了一项的情况最容易让人以为配好了：三项齐了才会生效
@@ -1415,8 +1419,13 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     }
 
     if(!bits.length){
-      // 没配的时候要说清楚少的是什么，不然用户以为功能坏了
-      el.textContent = '还没填 Key：AI 补全、AI 拆单、高德通勤都用不了，只按规则跑。Key 只存在这台设备的浏览器里，不会上传。';
+      // 没配的时候要说清楚少的是什么，不然用户以为功能坏了。
+      // 必须点明「Key 按网址隔离」——用户在本地 127.0.0.1 填过一份，
+      // 打开 GitHub Pages 以为是同一套设置，结果那儿一个请求都不发，
+      // 账单上没有任何消耗，人却完全看不出该去补配置。
+      el.textContent = '还没填 Key：AI 拆单和读字段都用不了，只按规则跑。'
+        + 'Key 存在这个网址的浏览器里——在本地 127.0.0.1 填的那份，'
+        + '打开 GitHub Pages 是读不到的，得在这儿再填一次。';
       return;
     }
     el.textContent = bits.join(' · ') + '。Key 只存在这台设备的浏览器里，不会上传。';
@@ -1446,7 +1455,9 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       });
       initAi();
       initMap();
+      // 填完 Key 要立刻看到状态标签变过来，不然用户不知道自己填生效了没有
       if(current) openDetail(current, cache.length || 1);
+      else if(cache.length) renderList();
     }, 600);
   }
 
@@ -1566,6 +1577,36 @@ textarea::placeholder{color:var(--faint);opacity:.75}
   // 每次分析都递增，用来丢弃过期的 AI 拆单结果
   // （用户连粘两条时，第一条的 AI 回复不能盖掉第二条）
   var splitSeq = 0;
+
+  // AI 到底有没有在工作，必须常驻显示在结果区。
+  // 以前这个状态只在「设条件」面板里，而 AI 没配上的时候页面是**静默**走
+  // 规则的——用户在本地 127.0.0.1 填过 Key，换个网址（比如 GitHub Pages）
+  // 那份 localStorage 根本读不到，于是一个请求都不发，账单上没有任何消耗，
+  // 用户却完全看不出该去补配置。现在列表和详情都带这一个标签。
+  function aiStateTag(){
+    if(ai.enabled){
+      return '<span class="tag good">AI 拆单 · ' + esc(api.aiModel || '已配置') + '</span>';
+    }
+    return '<span class="tag bad" id="aiCfgLink" style="cursor:pointer"'
+      + ' title="点这里去填 Key">AI 未配置 · 走规则，点此填写</span>';
+  }
+
+  // 标签渲染完再绑事件——innerHTML 重建之后旧节点上的监听器已经没了
+  function bindAiStateTag(){
+    var el = document.getElementById('aiCfgLink');
+    if(el) el.addEventListener('click', openCfgPanel);
+  }
+
+  function openCfgPanel(){
+    var p = document.getElementById('pPanel');
+    if(!p.classList.contains('on')){
+      p.classList.add('on');
+      document.getElementById('pToggle').textContent = '收起';
+    }
+    // 面板很长，直接把焦点送到 Key 输入框，省得自己滚
+    var f = document.getElementById('fAiKey');
+    if(f) f.focus();
+  }
 
   // 这批单子是谁拆的。要显示出来——不然 AI 静默介入或静默失败，
   // 用户根本无从判断它到底工作没有。
@@ -2003,8 +2044,15 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     // 单条补全整条链路已经删掉——拆单时 AI 已经读过字段，不需要补第二次。
   }
 
+  // 本地后台只在 127.0.0.1 上跑。GitHub Pages、file:// 这些地方发了
+  // /ai-status 也只会拿到 404，白白在控制台留一条报错，所以直接跳过。
+  function hasLocalBackend(){
+    return /^(?:127\.0\.0\.1|localhost|\[::1\])$/i.test(location.hostname || '');
+  }
+
   function initAi(){
     if(aiDirect()){ applyAiStatus(true); return; }
+    if(!hasLocalBackend()) return;
     fetch('/ai-status').then(function(r){ return r.json(); }).then(function(d){
       applyAiStatus(d && d.enabled);
     }).catch(function(){});
@@ -2019,6 +2067,7 @@ textarea::placeholder{color:var(--faint);opacity:.75}
 
   function initMap(){
     if(mapDirect()){ applyMapStatus(true); return; }
+    if(!hasLocalBackend()) return;
     fetch('/map-status').then(function(r){ return r.json(); }).then(function(d){
       applyMapStatus(d && d.enabled);
     }).catch(function(){});
