@@ -608,9 +608,10 @@ textarea::placeholder{color:var(--faint);opacity:.75}
       if(!ln) continue;
 
       // 行首标签。群里中英文方括号混着写太常见了：[地址】、【地址]:、[时薪]
-      var lb = ln.match(/^[\[【]\s*([^\]】]{1,8}?)\s*[\]】]\s*[:：]?\s*(.*)$/);
+      var lb = ln.match(/^[\[【『「]\s*([^\]】』」]{1,8}?)\s*[\]】』」]\s*[:：]?\s*(.*)$/);
       // 没有括号的裸标签：地址：xxx / 学员地址：xxx
-      var bare = !lb && ln.match(/^(学员地址|上课地址|上课地点|地址|地点|位置)\s*[:：]\s*(.+)$/);
+      // 行首可能带列表前缀：「➡地址：」「➤地址：」「· 地址：」
+      var bare = !lb && ln.match(/^[➡➤▶·•\s]*(学员地址|上课地址|上课地点|地址|地点|位置)\s*[:：]\s*(.+)$/);
       var tag = lb ? lb[1] : (bare ? bare[1] : '');
       var body = lb ? lb[2] : (bare ? bare[2] : ln.replace(/^\d+\s*[、.．)）]\s*/, ''));
 
@@ -709,9 +710,11 @@ textarea::placeholder{color:var(--faint);opacity:.75}
   function parseOrder(t){
     var o = { raw: t }, m;
 
-    if(m = t.match(/高\s*([一二三123])/)) o.grade = '高' + m[1];
-    else if(m = t.match(/初\s*([一二三123])/)) o.grade = '初' + m[1];
-    else if(m = t.match(/小\s*([一二三四五六123456])/)) o.grade = '小' + m[1];
+    // 年级。后面必须加 (?!\d)——群里「最高150/h」的 150 首位是 1，
+    // 不加这条会把「最高150」当成「高一」，整单年级就错了。
+    if(m = t.match(/高\s*([一二三123])(?!\d)/)) o.grade = '高' + m[1];
+    else if(m = t.match(/初\s*([一二三123])(?!\d)/)) o.grade = '初' + m[1];
+    else if(m = t.match(/小\s*([一二三四五六123456])(?!\d)/)) o.grade = '小' + m[1];
     else if(m = t.match(/([一二三四五六123456])\s*年级/)) o.grade = m[1] + '年级';
     else if(m = t.match(/(小学|初中|高中|艺考|大学|成人|考研)/)) o.grade = m[1];
 
@@ -735,9 +738,21 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     else if(m = t.match(/(?:一次|每次|每节)\s*([\d.]+|[一二两三四])\s*(?:个)?\s*(?:小时|h|H)/)) o.duration = toNum(m[1]);
     else if(m = t.match(/([\d.]+)\s*(?:个)?\s*(?:小时|h|H)(?![a-zA-Z])/)) o.duration = parseFloat(m[1]);
 
+    // 「120-160/2H」区间总价：两端都要除以课时长，不能只取上限那个数。
+    // 只处理一端的话 120 元/2h 那档就看不见了。
+    // 必须放在单值「总价/时长」**之前**——那条正则可选匹配区间，
+    // 放前面会把 260-300/2H 整个吃掉、只算上限那一档。
+    if(m = t.match(/(\d{2,5})\s*[-~—～]\s*(\d{2,5})\s*\/\s*(\d+(?:\.\d+)?)\s*(?:h|H|小时)/i)){
+      var loAll = parseInt(m[1], 10), hiAll = parseInt(m[2], 10), hrsAll = parseFloat(m[3]);
+      if(hrsAll > 0 && loAll > 0 && hiAll >= loAll){
+        o.rate = Math.round(loAll / hrsAll);
+        o.rateMax = Math.round(hiAll / hrsAll);
+      }
+    }
+
     // 「260-300/2H」这种是每节课的总价，不是时薪，要除以课时长折回来。
     // 群里的单子极常见这个写法，漏了会把时薪算成两倍。
-    if(m = t.match(/(\d+)\s*(?:[-~—]\s*(\d+))?\s*\/\s*(\d+(?:\.\d+)?)\s*(?:h|H|小时)/)){
+    if(!o.rate && (m = t.match(/(\d+)\s*(?:[-~—～]\s*(\d+))?\s*\/\s*(\d+(?:\.\d+)?)\s*(?:h|H|小时)/i))){
       var hiPrice = m[2] ? parseInt(m[2], 10) : parseInt(m[1], 10);
       var hrsPer = parseFloat(m[3]);
       if(hrsPer > 0 && hiPrice > 0) o.rate = Math.round(hiPrice / hrsPer);
@@ -748,18 +763,31 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     // 「为什么显示 110 却算出别的数」。按下限入账、上限留着展示。
     // 注意放在「总价/时长」后面：那边 / 后面跟的是数字（260-300/2H），
     // 这边跟的是单位字母，两边互斥，顺序反了会把总价拆坏。
-    if(!o.rate && (m = t.match(/(\d{2,4})\s*[-~—]\s*(\d{2,4})\s*(?:元|块)?\s*(?:\/|每)\s*(?:小时|h|H|时|课时|节)/i))){
+    // 波浪号要连全角「～」一起认——群里 100～120/h 和 100-120/h 一样常见。
+    if(!o.rate && (m = t.match(/(\d{2,4})\s*[-~—～]\s*(\d{2,4})\s*(?:元|块)?\s*(?:\/|每)\s*(?:小时|h|H|时|课时|节)/i))){
       o.rate = parseInt(m[1], 10);
       o.rateMax = parseInt(m[2], 10);
     }
 
     if(!o.rate && (m = t.match(/(\d+)\s*(?:元|块|rmb)?\s*(?:\/|每)\s*(?:小时|h|时|课时|节)/i))) o.rate = parseInt(m[1],10);
     else if(!o.rate && (m = t.match(/(?:时薪|每小时|一小时|课时费)\s*(?:为|是|：|:)?\s*(\d+)/))) o.rate = parseInt(m[1],10);
-    else if(!o.rate && (m = t.match(/(\d+)\s*(?:元|块)\s*(?:一小时|每小时)/))) o.rate = parseInt(m[1],10);
+    // 「110一小时」没写「元」字的一样认。以前元是必填的，群里一大半
+    // 「课时费：大学生110一小时，专职老师240一小时」就这么写，整条漏掉。
+    else if(!o.rate && (m = t.match(/(\d{2,4})\s*(?:元|块|rmb)?\s*(?:一小时|每小时)/))) o.rate = parseInt(m[1],10);
+
+    // 「【时薪】：100-110」只给区间不给单位。这种写法前面必然有价格词，
+    // 靠它兜底——没有这个的话，一大票 GZa 系单子的时薪全是空的。
+    // 标签的右括号 【】/[] 也要吃掉，不然「【时薪】100-110」卡在括号上。
+    if(!o.rate && (m = t.match(/(?:时薪|课时费|课酬|薪资|薪水|报酬|待遇|课费|提供时薪|老师薪资)\s*[\]】]?\s*[:：]?\s*(?:是|为|按)?\s*(\d{2,4})\s*[-~—～]\s*(\d{2,4})(?!\s*[\/每]?\s*\d)/))){
+      o.rate = parseInt(m[1], 10);
+      o.rateMax = parseInt(m[2], 10);
+    }
 
     if(!o.rate){
       var total = null;
-      if(m = t.match(/(\d{2,5})\s*(?:元|块)\s*(?:\/\s*次|一次|每次)/)) total = parseInt(m[1],10);
+      // 「200一次课」「100/次」「专职450/次」都算单次总价，不是时薪。
+      // 以前「元」是必填的，导致 100/次、200一次课 整条漏掉。
+      if(m = t.match(/(\d{2,5})\s*(?:元|块)?\s*(?:\/\s*次|次课|一次课|一次|每次|每节)/)) total = parseInt(m[1],10);
       else if(m = t.match(/(?:一次|每次|每节)\s*(?:是|收|给|要)?\s*(\d{2,5})(?![\d.])/)) total = parseInt(m[1],10);
       if(total && o.duration) o.rate = Math.round(total / o.duration);
     }
@@ -770,8 +798,9 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     // 这种楼盘名的话，不限定城市会搜到全国同名的小区。
     if(m = t.match(/(广州|佛山|深圳|东莞|珠海|中山|北京|上海|杭州|成都|武汉|南京|西安|重庆|苏州)/)) o.city = m[1];
 
-    if(m = t.match(/地铁\s*(\d+)\s*号线\s*([\u4e00-\u9fa5]{2,7}?)(?:站|附近|口)/)){
-      o.location = '地铁' + m[1] + '号线 ' + m[2] + '站';
+    // 地铁站。线路号中文数字也要认——群里「地铁九号线青布站」比「地铁9号线」更常见
+    if(m = t.match(/地铁\s*([0-9一二三四五六七八九十]{1,2})\s*号线\s*([\u4e00-\u9fa5]{2,7}?)(?:站|附近|口)/)){
+      o.location = '地铁' + toNum(m[1]) + '号线 ' + m[2] + '站';
     }
 
     for(var i=0;i<DISTRICTS.length;i++){
@@ -2304,12 +2333,16 @@ textarea::placeholder{color:var(--faint);opacity:.75}
     LEAD + '【?\\s*(?:编号|单号)\\s*】?\\s*[:：]?',            // 【编号】 13205 / 编号：GZ6102226
     LEAD + '[A-Za-z]{2,4}[-_]?\\d{3,}',                      // XMY-102201 / ZX2130 / DD2007
     '^(?:广州|佛山|深圳|东莞|珠海|中山)(?=[^\\n]*\\d{4})',      // 广州BY26102206 / 佛山26102202C
-    '^[🎃🍀🌟⭐️]',                                            // 🎃🎃佛山26102202C
+    '^(?!➡)\\p{Extended_Pictographic}',                      // 🎃🎃佛山26102202C / 🥕广州越秀区…（➡ 是列表前缀，排除）
     '^.{0,12}?gz[-_ ]?\\d{6,}'                               // 家教宝贝粥粥: gz10221626
-  ].join('|'), 'i');
+  ].join('|'), 'iu');   // u 是给 \p{Extended_Pictographic} 用的
 
-  // 分隔线，先统一换成空行，靠它能把一大批单子自然地分开
-  var SEP_LINE = /^[—\-_=*·~\s]{3,}$/;
+  // 分隔线，先统一换成空行，靠它能把一大批单子自然地分开。
+  // 后半段是分组标题（「线上单」「天河区」「其他均已出」…）——它们不是单子，
+  // 但留着会污染上一条的尾巴：实测「线上单」被并进上一条后，那条被判成
+  // 线上课，通勤全免、距离白拿 100 分。判据是「很短且以 区/单/出 结尾」，
+  // 不会误伤「越秀区第三中学（大新路校区）附近」这种真地址行。
+  var SEP_LINE = /^(?:[—\-_=*·~\s]{3,}|.{0,12}(?:区|单|已出)(?:[#＃\s].{0,20})?$|#(?!\d).{0,30}$)/;
 
   function splitOrders(raw){
     var text = String(raw || '').replace(/\r\n?/g, '\n');
